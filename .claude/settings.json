@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/block-env-access.mjs",
+            "timeout": 10,
+            "statusMessage": "Checking for .env access"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/format-file.mjs",
+            "timeout": 30,
+            "statusMessage": "Formatting"
+          }
+        ]
+      }
+    ]
+  }
+}

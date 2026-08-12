@@ -1,0 +1,68 @@
+#!/bin/sh
+#
+# Pre-commit hook for Cultural Food Guide.
+#
+# This runs on `git commit` regardless of which AI tool (or none) produced the
+# code, so it protects all four team members on any OS. Tool-specific hooks in
+# .claude/ only cover the Claude Code users, which is why the checks that
+# actually matter live here.
+#
+# Enable once after cloning:
+#   git config core.hooksPath .githooks
+
+set -e
+
+FAILED=0
+
+# ---------------------------------------------------------------------------
+# 1. Block direct commits to main
+# ---------------------------------------------------------------------------
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+
+if [ "$BRANCH" = "main" ]; then
+  echo "BLOCKED: direct commits to main are not allowed."
+  echo ""
+  echo "  Work on a feature branch and open a pull request:"
+  echo "    git checkout -b feature/your-change"
+  echo ""
+  echo "  To override for a genuine exception:  git commit --no-verify"
+  FAILED=1
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Scan staged content for API keys
+# ---------------------------------------------------------------------------
+# Gemini keys start AIza..., Anthropic sk-ant-..., OpenAI sk-proj-/sk-.
+# .env is gitignored, but this catches a key hardcoded into source while
+# debugging, which is the failure .gitignore cannot prevent.
+
+SECRETS="$(git diff --cached -U0 \
+  | grep -E '^\+' \
+  | grep -nE 'AIza[0-9A-Za-z_-]{20,}|sk-ant-[0-9A-Za-z_-]{20,}|sk-proj-[0-9A-Za-z_-]{20,}' \
+  || true)"
+
+if [ -n "$SECRETS" ]; then
+  echo "BLOCKED: what looks like an API key was found in staged changes."
+  echo ""
+  echo "$SECRETS"
+  echo ""
+  echo "  Move the value into backend/.env (which is gitignored) and read it"
+  echo "  from process.env instead."
+  FAILED=1
+fi
+
+# ---------------------------------------------------------------------------
+# 3. Refuse to commit a .env file
+# ---------------------------------------------------------------------------
+STAGED_ENV="$(git diff --cached --name-only | grep -E '(^|/)\.env$' || true)"
+
+if [ -n "$STAGED_ENV" ]; then
+  echo "BLOCKED: .env is staged for commit."
+  echo ""
+  echo "$STAGED_ENV"
+  echo ""
+  echo "  Unstage it:  git restore --staged $STAGED_ENV"
+  FAILED=1
+fi
+
+exit $FAILED
