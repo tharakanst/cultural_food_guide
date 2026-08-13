@@ -77,23 +77,39 @@ commitments in the project plan.
 
 ## API contract
 
-`POST /api/analyze`
+**Defined once in [`shared/types.ts`](shared/types.ts). Import it — do not
+redeclare these shapes on either side.**
 
 ```ts
-// request
-{ image: string }   // data URL, e.g. "data:image/jpeg;base64,..."
-
-// response
-{
-  name: string
-  description: string
-  ingredients: string[]
-  allergens: string[]
-  culturalContext: string
-  referenceImageUrl?: string
-  disclaimer: string
-}
+import type { AnalyzeRequest, AnalyzeResponse, ApiError } from '../../shared/types'
 ```
+
+The file is types-only by design: TypeScript erases `import type` at compile
+time, so a plain relative path works from both sides with no path aliases,
+bundler config, or workspace setup. Do not add runtime values to it — that
+would break this property.
+
+`POST /api/analyze` takes `AnalyzeRequest` and returns `AnalyzeResponse`, or
+`ApiError` with a non-2xx status.
+
+Two fields carry requirements worth knowing before you use them:
+
+- **`identified: boolean`** — false when the photo could not be identified as
+  food. The frontend must then show an honest "could not identify this" state
+  rather than rendering a guess as a result.
+- **`allergens: string[]`** — safety-critical, and must state uncertainty
+  explicitly when the model is inferring rather than reading a label.
+
+## Shared constants
+
+Values both sides need are duplicated rather than shared, because putting
+runtime values in `shared/types.ts` would break its zero-config property. Keep
+these in sync:
+
+| Constant | Value |
+|---|---|
+| Max image payload | 10 MB |
+| Accepted image types | `image/jpeg`, `image/png`, `image/webp` |
 
 ## Running it
 
