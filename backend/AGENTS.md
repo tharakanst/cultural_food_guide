@@ -35,6 +35,28 @@ src/index.ts              bootstrap — middleware, port
    Gemini costs quota from a shared free tier.
 4. **Errors returned to the client are generic.** `{ error: "Failed to analyze
    image" }`. Stack traces and provider errors go to the server log only.
+5. **URLs from external APIs are validated before being returned to the client.**
+   See the reference image section below. Anything we hand the frontend ends up
+   in an `<img src>`, so an unchecked third-party URL is an injection vector.
+
+## Reference image lookup
+
+`imageService` queries the Wikimedia Commons API for a photo of the identified
+dish. No API key is required.
+
+The returned image URL is **untrusted third-party data**. Before it is included
+in a response:
+
+- Parse it as a URL and reject anything that fails to parse
+- Require `https:`
+- Require the hostname to be `upload.wikimedia.org` or a `*.wikimedia.org`
+  subdomain — an allowlist, not a blocklist
+- If validation fails, omit `referenceImageUrl` entirely rather than passing
+  through a URL we could not verify
+
+A missing image is a minor degradation. An arbitrary attacker-controlled URL
+rendered in an `<img>` tag is not. The frontend's Content-Security-Policy
+`img-src` is the second layer; this is the first.
 
 ## Model output handling
 

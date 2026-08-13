@@ -32,6 +32,9 @@ confidence. Content that is technically present but hard to parse has failed.
 These come from the project plan and are not optional:
 
 - Every image has meaningful alt text. Describe the dish, not the file.
+- `referenceImageUrl` is optional and frequently absent — the backend omits it
+  when Wikimedia has no match or the URL fails validation. Render the result
+  without it rather than showing a broken image.
 - Loading, error, and result states are announced to screen readers via
   `aria-live` — not only rendered visually.
 - Every control is reachable and operable by keyboard. Be careful with the file
