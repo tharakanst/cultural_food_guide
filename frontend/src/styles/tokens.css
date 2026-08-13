@@ -1,0 +1,208 @@
+/*
+ * Design tokens — the single place colour is defined.
+ *
+ * Rule (frontend/AGENTS.md): no hardcoded colour values anywhere else in the
+ * codebase. Every component stylesheet references these custom properties so
+ * that contrast can be audited centrally, in this file.
+ *
+ * ---------------------------------------------------------------------------
+ * CONTRAST AUDIT
+ * ---------------------------------------------------------------------------
+ * Every ratio below was computed with the WCAG 2.x relative-luminance formula
+ * (sRGB linearisation, L = 0.2126R + 0.7152G + 0.0722B, ratio = (L1+.05)/(L2+.05)).
+ *
+ * Targets: 4.5:1 for body text, 3:1 for large text (>=24px, or >=18.66px bold)
+ * and for non-text UI boundaries (WCAG 1.4.11). Every text pair here clears
+ * 4.5:1, so no pair depends on the relaxed large-text allowance.
+ *
+ * Ratios are recorded inline next to each token pairing below.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* ---- Light theme (default) ------------------------------------------ */
+
+  /* Surfaces */
+  --color-bg: #ffffff;
+  --color-surface: #f2f5f8; /* panel fill; 1.09:1 vs bg — decorative only,
+                               grouping is carried by --color-border, never by
+                               this fill alone */
+
+  /* Text */
+  --color-text: #17191c; /* 17.61:1 on --color-bg
+                            16.10:1 on --color-surface
+                            15.43:1 on --color-allergen-bg
+                            16.13:1 on --color-notice-bg */
+  --color-text-muted: #4b5259; /*  7.92:1 on --color-bg
+                                   7.24:1 on --color-surface
+                                   6.94:1 on --color-allergen-bg
+                                  Used for supporting prose only — never for
+                                  allergen or dietary content. */
+
+  /* Accent — primary actions and links */
+  --color-accent: #0b5394; /*  7.84:1 on --color-bg
+                                7.16:1 on --color-surface
+                                7.84:1 as a focus ring on --color-bg (needs 3) */
+  --color-accent-hover: #083d6e; /* 11.04:1 against --color-on-accent */
+  --color-on-accent: #ffffff; /*  7.84:1 on --color-accent
+                                 11.04:1 on --color-accent-hover */
+
+  /* Borders */
+  --color-border: #6a7178; /*  4.95:1 on --color-bg
+                                4.52:1 on --color-surface
+                               Clears the 3:1 non-text bar, so it is safe as the
+                               boundary of an interactive control. */
+  --color-border-subtle: #c8cdd3; /* 1.60:1 on --color-bg — DECORATIVE ONLY.
+                                     Hairline separators inside an already
+                                     visible panel. Never the sole indicator of
+                                     a control, a boundary, or a state. */
+
+  /* Focus */
+  --color-focus: #0b5394; /* 7.84:1 on --color-bg (needs 3:1) */
+
+  /* Allergens and dietary flags — SAFETY-CRITICAL.
+     Body text in this region uses --color-text at normal size, exactly like the
+     rest of the page. The tinted background and accent add emphasis; they never
+     replace or weaken the text colour. */
+  --color-allergen-bg: #fdeced;
+  --color-allergen-accent: #9a1219; /* 7.43:1 on --color-allergen-bg
+                                       8.49:1 on --color-bg
+                                       Clears 4.5:1, so it is legible as text —
+                                       not merely as decoration. */
+
+  /* Errors — request failures. */
+  --color-error-bg: #fdeced;
+  --color-error-accent: #9a1219; /* 7.43:1 on --color-error-bg */
+
+  /* Notices — "could not identify this", disclaimers. */
+  --color-notice-bg: #fdf4e3;
+  --color-notice-accent: #7a4a06; /* 6.84:1 on --color-notice-bg */
+
+  /* ---- Non-colour tokens ---------------------------------------------- */
+
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* 44px is the minimum touch target (WCAG 2.5.5 / 2.5.8 with headroom). */
+  --touch-target: 44px;
+
+  --radius: 8px;
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Dark theme — every pairing re-audited, same targets. */
+
+    --color-bg: #15181c;
+    --color-surface: #1f242a; /* 1.14:1 vs bg — decorative only, as above */
+
+    --color-text: #f1f3f5; /* 16.01:1 on --color-bg
+                              14.05:1 on --color-surface
+                              14.04:1 on --color-allergen-bg
+                              11.94:1 on --color-notice-bg */
+    --color-text-muted: #b9c1c9; /*  9.78:1 on --color-bg
+                                     8.58:1 on --color-surface
+                                     8.58:1 on --color-allergen-bg */
+
+    --color-accent: #8fc4f5; /*  9.65:1 on --color-bg
+                                 8.47:1 on --color-surface
+                                 9.65:1 as a focus ring on --color-bg */
+    --color-accent-hover: #b4d8fa; /* 12.47:1 against --color-on-accent */
+    --color-on-accent: #0a1420; /* 10.04:1 on --color-accent
+                                   12.47:1 on --color-accent-hover */
+
+    --color-border: #8a939c; /*  5.71:1 on --color-bg
+                                 5.01:1 on --color-surface */
+    --color-border-subtle: #3a4149; /* 1.72:1 on --color-bg — decorative only */
+
+    --color-focus: #8fc4f5; /* 9.65:1 on --color-bg (needs 3:1) */
+
+    --color-allergen-bg: #3a1a1c;
+    --color-allergen-accent: #ffb3b0; /* 9.17:1 on --color-allergen-bg
+                                         10.45:1 on --color-bg */
+
+    --color-error-bg: #3a1a1c;
+    --color-error-accent: #ffb3b0; /* 9.17:1 on --color-error-bg */
+
+    --color-notice-bg: #3a2e14;
+    --color-notice-accent: #f2c777; /* 8.36:1 on --color-notice-bg */
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Base button
+ *
+ * Every button in the app uses .btn. The 44px floor is enforced here rather
+ * than per-component so no control can accidentally ship below it. min-height
+ * plus min-width (not fixed height) so the target still holds when text wraps
+ * at 375px or when the user raises their default font size.
+ * ------------------------------------------------------------------------ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+
+  min-height: var(--touch-target);
+  min-width: var(--touch-target);
+  padding: var(--space-sm) var(--space-lg);
+
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--color-accent);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 1; /* Deliberately not faded — a dimmed label is unreadable in
+                 daylight. Disabled state is conveyed by the border and by the
+                 disabled attribute, which assistive tech reports. */
+  border-style: dashed;
+  color: var(--color-text-muted);
+}
+
+/* Primary action */
+.btn--primary {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border-color: var(--color-accent);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+.btn--primary:disabled {
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+}
+
+/* One focus treatment for every focusable thing in the app. Uses :focus-visible
+ * where supported; the outline is drawn outside the element so it is never
+ * clipped by an overflow container. */
+:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}

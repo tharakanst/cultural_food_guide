@@ -1,0 +1,24 @@
+{
+  "name": "cultural_food_guide",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Identifies food from a photo and explains its ingredients, allergens, and cultural context.",
+  "scripts": {
+    "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "typecheck": "npm run typecheck --prefix backend && npm run typecheck --prefix frontend",
+    "test": "npm run test --prefix backend && npm run test --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "verify": "npm run typecheck && npm run test && npm run build",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tharakanst/cultural_food_guide.git"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^10.0.4",
+    "prettier": "^3.9.6"
+  }
+}

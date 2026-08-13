@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Cultural Food Guide">
+  <!-- Colours mirror --color-accent / --color-on-accent in src/styles/tokens.css. -->
+  <rect width="512" height="512" rx="96" fill="#0b5394" />
+  <g fill="none" stroke="#ffffff" stroke-width="28" stroke-linecap="round">
+    <path d="M116 248 h280 a140 140 0 0 1 -280 0 z" fill="#ffffff" stroke="none" />
+    <path d="M100 248 h312" />
+    <path d="M206 180 c0 -24 22 -24 22 -48 s-22 -24 -22 -48" />
+    <path d="M274 180 c0 -24 22 -24 22 -48 s-22 -24 -22 -48" />
+  </g>
+</svg>

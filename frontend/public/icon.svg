@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Cultural Food Guide">
+  <!-- Colours mirror --color-accent / --color-on-accent in src/styles/tokens.css.
+       A web app manifest cannot reference CSS custom properties, so these two
+       values are duplicated here by necessity. Keep them in sync. -->
+  <rect width="512" height="512" rx="96" fill="#0b5394" />
+  <!-- Generous padding so the mark survives a maskable safe-zone crop. -->
+  <g fill="none" stroke="#ffffff" stroke-width="20" stroke-linecap="round">
+    <!-- Bowl -->
+    <path d="M136 252 h240 a120 120 0 0 1 -240 0 z" fill="#ffffff" stroke="none" />
+    <path d="M120 252 h272" />
+    <!-- Steam -->
+    <path d="M212 196 c0 -22 20 -22 20 -44 s-20 -22 -20 -44" />
+    <path d="M268 196 c0 -22 20 -22 20 -44 s-20 -22 -20 -44" />
+    <!-- Base -->
+    <path d="M188 380 h136" />
+  </g>
+</svg>
