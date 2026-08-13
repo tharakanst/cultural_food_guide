@@ -1,0 +1,255 @@
+/**
+ * Tests for POST /api/analyze — request validation and response shaping.
+ *
+ * The route is exercised through a minimal Express app (express.json() +
+ * the router under test) rather than through src/index.ts, because index.ts
+ * calls app.listen() as a side effect of being imported and binding a real
+ * port in every test file is exactly the kind of nondeterminism this suite
+ * exists to avoid. src/index.ts's own wiring (helmet, cors, the terminal
+ * error handler, 404s) is covered separately in src/index.test.ts.
+ *
+ * aiService and imageService are mocked throughout: this file must never
+ * reach the real Gemini API or the real Wikimedia API.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import express from 'express'
+import request from 'supertest'
+import analyzeRouter from './analyze'
+
+const { analyzeImageMock, findReferenceImageMock } = vi.hoisted(() => ({
+  analyzeImageMock: vi.fn(),
+  findReferenceImageMock: vi.fn(),
+}))
+
+vi.mock('../services/aiService', () => ({
+  analyzeImage: analyzeImageMock,
+}))
+vi.mock('../services/imageService', () => ({
+  findReferenceImage: findReferenceImageMock,
+}))
+
+function buildApp() {
+  const app = express()
+  app.use(express.json({ limit: '14mb' }))
+  app.use('/api', analyzeRouter)
+  return app
+}
+
+/** A syntactically valid JPEG data URL with a decoded payload of the given byte length. */
+function dataUrlOfSize(bytes: number, mimeType = 'image/jpeg'): string {
+  return `data:${mimeType};base64,${Buffer.alloc(bytes, 1).toString('base64')}`
+}
+
+const TINY_JPEG_DATA_URL = dataUrlOfSize(100)
+
+const VALID_ANALYSIS = {
+  identified: true,
+  name: 'Karjalanpiirakka',
+  description: 'A savoury Karelian rice pastry.',
+  ingredients: ['rye flour', 'rice porridge'],
+  allergens: ['Likely contains gluten — typical for this dish'],
+  culturalContext: 'A traditional Finnish pastry from Karelia.',
+  disclaimer: 'AI-generated, may be wrong.',
+}
+
+const UNIDENTIFIED_ANALYSIS = {
+  identified: false,
+  name: '',
+  description: 'The photo is too blurry to read.',
+  ingredients: [],
+  allergens: [],
+  culturalContext: '',
+  disclaimer: 'AI-generated, may be wrong.',
+}
+
+describe('POST /api/analyze — request validation', () => {
+  beforeEach(() => {
+    analyzeImageMock.mockReset()
+    findReferenceImageMock.mockReset()
+  })
+
+  it('rejects a body that is not a JSON object', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze')
+      .set('Content-Type', 'application/json')
+      .send('"just a string"')
+
+    expect(res.status).toBe(400)
+    expect(res.body).toEqual({ error: expect.any(String) })
+    expect(analyzeImageMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects a body missing the image field', async () => {
+    const app = buildApp()
+    const res = await request(app).post('/api/analyze').send({})
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/image/i)
+    expect(analyzeImageMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects a non-string image field', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze')
+      .send({ image: 12345 })
+
+    expect(res.status).toBe(400)
+    expect(analyzeImageMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects an image that is not a data URL at all', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze')
+      .send({ image: 'https://example.com/food.jpg' })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/base64 data url/i)
+  })
+
+  it('rejects a data URL with a garbage/smuggled prefix', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze')
+      .send({ image: 'data:image/jpeg;base64,not-valid-base64!!! <script>' })
+
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects an unsupported MIME type (e.g. GIF)', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze')
+      .send({ image: dataUrlOfSize(100, 'image/gif') })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/unsupported image type/i)
+    expect(analyzeImageMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects a non-image MIME type disguised with an image extension (text file as .jpg)', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze')
+      .send({ image: `data:text/plain;base64,${Buffer.from('just text').toString('base64')}` })
+
+    expect(res.status).toBe(400)
+    expect(analyzeImageMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects a payload over the 10MB decoded limit with 413', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze')
+      .send({ image: dataUrlOfSize(10 * 1024 * 1024 + 1) })
+
+    expect(res.status).toBe(413)
+    expect(res.body.error).toMatch(/10mb/i)
+    expect(analyzeImageMock).not.toHaveBeenCalled()
+  })
+
+  it('accepts a payload right at the 10MB decoded boundary', async () => {
+    analyzeImageMock.mockResolvedValue(VALID_ANALYSIS)
+    findReferenceImageMock.mockResolvedValue(undefined)
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze')
+      .send({ image: dataUrlOfSize(10 * 1024 * 1024) })
+
+    expect(res.status).toBe(200)
+  })
+})
+
+describe('POST /api/analyze — success responses', () => {
+  beforeEach(() => {
+    analyzeImageMock.mockReset()
+    findReferenceImageMock.mockReset()
+  })
+
+  it('looks up a reference image and includes it when identified', async () => {
+    analyzeImageMock.mockResolvedValue(VALID_ANALYSIS)
+    findReferenceImageMock.mockResolvedValue('https://upload.wikimedia.org/wikipedia/commons/x.jpg')
+
+    const app = buildApp()
+    const res = await request(app).post('/api/analyze').send({ image: TINY_JPEG_DATA_URL })
+
+    expect(res.status).toBe(200)
+    expect(res.body.referenceImageUrl).toBe('https://upload.wikimedia.org/wikipedia/commons/x.jpg')
+    expect(findReferenceImageMock).toHaveBeenCalledWith(VALID_ANALYSIS.name)
+  })
+
+  it('never adds a referenceImageUrl key when the lookup finds nothing', async () => {
+    analyzeImageMock.mockResolvedValue(VALID_ANALYSIS)
+    findReferenceImageMock.mockResolvedValue(undefined)
+
+    const app = buildApp()
+    const res = await request(app).post('/api/analyze').send({ image: TINY_JPEG_DATA_URL })
+
+    expect(res.status).toBe(200)
+    expect(res.body).not.toHaveProperty('referenceImageUrl')
+  })
+
+  it('does not look up a reference image when identified is false', async () => {
+    analyzeImageMock.mockResolvedValue(UNIDENTIFIED_ANALYSIS)
+
+    const app = buildApp()
+    const res = await request(app).post('/api/analyze').send({ image: TINY_JPEG_DATA_URL })
+
+    expect(res.status).toBe(200)
+    expect(res.body.identified).toBe(false)
+    expect(findReferenceImageMock).not.toHaveBeenCalled()
+    expect(res.body).not.toHaveProperty('referenceImageUrl')
+  })
+
+  it('passes the decoded base64 and mime type through to analyzeImage untouched', async () => {
+    analyzeImageMock.mockResolvedValue(VALID_ANALYSIS)
+    findReferenceImageMock.mockResolvedValue(undefined)
+
+    const app = buildApp()
+    await request(app).post('/api/analyze').send({ image: dataUrlOfSize(100, 'image/png') })
+
+    const [base64Arg, mimeArg] = analyzeImageMock.mock.calls[0]
+    expect(mimeArg).toBe('image/png')
+    expect(typeof base64Arg).toBe('string')
+    expect(Buffer.from(base64Arg, 'base64').length).toBe(100)
+  })
+})
+
+describe('POST /api/analyze — failure handling', () => {
+  const originalConsoleError = console.error
+
+  beforeEach(() => {
+    analyzeImageMock.mockReset()
+    findReferenceImageMock.mockReset()
+    console.error = vi.fn()
+  })
+
+  afterEach(() => {
+    console.error = originalConsoleError
+  })
+
+  it('returns a generic 500 when the AI service throws, without leaking the internal message', async () => {
+    analyzeImageMock.mockRejectedValue(new Error('Gemini request failed: quota exceeded, key AIza... leaked'))
+
+    const app = buildApp()
+    const res = await request(app).post('/api/analyze').send({ image: TINY_JPEG_DATA_URL })
+
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ error: 'Failed to analyze image' })
+    expect(res.text).not.toMatch(/AIza/)
+    expect(res.text).not.toMatch(/quota/)
+  })
+
+  it('returns a generic 500 when the reference-image lookup unexpectedly throws', async () => {
+    analyzeImageMock.mockResolvedValue(VALID_ANALYSIS)
+    findReferenceImageMock.mockRejectedValue(new Error('unexpected'))
+
+    const app = buildApp()
+    const res = await request(app).post('/api/analyze').send({ image: TINY_JPEG_DATA_URL })
+
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ error: 'Failed to analyze image' })
+  })
+})

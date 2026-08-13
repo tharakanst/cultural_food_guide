@@ -33,8 +33,20 @@ import type { AnalyzeResponse } from '../../../shared/types'
  */
 export type AiAnalysis = Omit<AnalyzeResponse, 'referenceImageUrl'>
 
-/** Free tier, multimodal, fast enough for a phone waiting on a result. */
-const MODEL_NAME = 'gemini-2.5-flash'
+/**
+ * Free tier, multimodal, fast enough for a phone waiting on a result.
+ *
+ * The `-latest` alias rather than a pinned version deliberately. A pinned
+ * `gemini-2.5-flash` broke here with "no longer available to new users" — the
+ * model was retired for new keys while still appearing in the model list, so a
+ * teammate setting up a fresh key would hit a 404 that nobody else saw. The
+ * alias tracks whatever the current Flash model is.
+ *
+ * The trade-off is that model behaviour can shift under us without a code
+ * change. For a prototype that is the better bet; a production system would
+ * pin a version and update it deliberately.
+ */
+const MODEL_NAME = 'gemini-flash-latest'
 
 /**
  * Give up rather than hold the user's request open indefinitely. Generous

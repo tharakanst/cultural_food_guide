@@ -277,7 +277,14 @@ p {
   border-radius: var(--radius);
   padding: var(--space-md);
   color: var(--color-text);
-  font-size: 1rem;
+  /*
+   * Inherit body's 1.0625rem rather than setting 1rem. `rem` resolves against
+   * the root element, not the parent, so an explicit 1rem here rendered
+   * allergen text at 16px against the body's 17px — making the most
+   * safety-critical content on the page smaller than the ingredients list
+   * beside it, and contradicting the comment above.
+   */
+  font-size: inherit;
 }
 
 .allergens__heading {

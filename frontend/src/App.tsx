@@ -13,8 +13,7 @@ const API_BASE_URL: string = import.meta.env.VITE_API_URL ?? 'http://localhost:4
 
 /** Shown when the backend gives us nothing usable. Deliberately generic —
  *  detail belongs in the server log, not on a phone screen. */
-const GENERIC_ERROR =
-  'Something went wrong while identifying this photo. Please try again.'
+const GENERIC_ERROR = 'Something went wrong while identifying this photo. Please try again.'
 
 type AppState =
   | { status: 'idle' }
@@ -25,9 +24,7 @@ type AppState =
 /** Type guard rather than a cast: the response body is untrusted. */
 function isApiError(value: unknown): value is ApiError {
   return (
-    typeof value === 'object' &&
-    value !== null &&
-    typeof (value as ApiError).error === 'string'
+    typeof value === 'object' && value !== null && typeof (value as ApiError).error === 'string'
   )
 }
 
@@ -121,8 +118,7 @@ export function App() {
       if (error instanceof DOMException && error.name === 'AbortError') return
       setState({
         status: 'error',
-        message:
-          'Could not reach the server. Check your connection and try again.',
+        message: 'Could not reach the server. Check your connection and try again.',
       })
     }
   }, [image])
@@ -150,17 +146,13 @@ export function App() {
       <header className="app__header">
         <h1>Cultural Food Guide</h1>
         <p className="app__tagline">
-          Photograph a dish, a menu or a food label to find out what is in it,
-          what it contains that you may need to avoid, and how it is normally
-          eaten.
+          Photograph a dish, a menu or a food label to find out what is in it, what it contains that
+          you may need to avoid, and how it is normally eaten.
         </p>
       </header>
 
       <main className="app__main">
-        <CameraCapture
-          onCapture={handleCapture}
-          disabled={state.status === 'loading'}
-        />
+        <CameraCapture onCapture={handleCapture} disabled={state.status === 'loading'} />
 
         {image ? (
           <div className="actions">
@@ -203,10 +195,19 @@ export function App() {
         <div ref={resultRef} tabIndex={-1} className="result-region">
           {state.status === 'error' ? (
             <div className="panel panel--error" role="alert">
-              <h2>Could not identify this photo</h2>
+              {/*
+                This is a request FAILURE, not an identification failure. The
+                two must not share wording: telling someone to take a clearer
+                photo when the server is unreachable sends them retrying
+                photographs against a problem no photograph can fix. An honest
+                identification failure is handled in FoodResult, where the
+                analysis actually ran and returned identified: false.
+              */}
+              <h2>Something went wrong</h2>
               <p>{state.message}</p>
               <p>
-                You can try again with the same photo, or take a clearer one.
+                This is a problem on our side, not with your photo. Try again in a moment — the same
+                photo is fine.
               </p>
             </div>
           ) : null}
@@ -217,8 +218,8 @@ export function App() {
 
       <footer className="app__footer">
         <p>
-          Photos are sent to our server for identification and are not stored.
-          No account, no location, no tracking.
+          Photos are sent to our server for identification and are not stored. No account, no
+          location, no tracking.
         </p>
       </footer>
     </div>
