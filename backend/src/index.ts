@@ -34,8 +34,14 @@ app.use(
  * Single origin, from the environment. Never widen this to '*' to fix a local
  * problem — set FRONTEND_ORIGIN instead. No credentials are used: the API is
  * stateless and there is nothing to authenticate.
+ *
+ * `Retry-After` is exposed deliberately. It is not on the CORS-safelisted
+ * response header list, so without this the browser hides it from `fetch` even
+ * though it is present on the wire — and the frontend cannot tell a per-minute
+ * burst limit from the shared daily one, which are very different waits to ask
+ * a user to sit through.
  */
-app.use(cors({ origin: FRONTEND_ORIGIN }))
+app.use(cors({ origin: FRONTEND_ORIGIN, exposedHeaders: ['Retry-After'] }))
 
 /**
  * Images arrive base64-encoded inside a JSON body, and base64 inflates a

@@ -68,12 +68,16 @@ describe('POST /api/analyze — request validation', () => {
     findReferenceImageMock.mockReset()
   })
 
-  it('rejects a body that is not a JSON object', async () => {
+  it('rejects a body whose top-level JSON value is an array, not an object', async () => {
+    // A bare top-level primitive (e.g. `"just a string"`) never reaches this
+    // validation at all: express.json()'s default strict mode rejects any
+    // top-level JSON value that isn't an object or array before req.body is
+    // even populated. That failure mode is covered at the wiring level in
+    // src/index.test.ts, which includes the terminal error handler this
+    // minimal test app deliberately omits. An array is the case that *does*
+    // reach validateAnalyzeRequest with the wrong shape.
     const app = buildApp()
-    const res = await request(app)
-      .post('/api/analyze')
-      .set('Content-Type', 'application/json')
-      .send('"just a string"')
+    const res = await request(app).post('/api/analyze').send([])
 
     expect(res.status).toBe(400)
     expect(res.body).toEqual({ error: expect.any(String) })
@@ -210,7 +214,8 @@ describe('POST /api/analyze — success responses', () => {
     const app = buildApp()
     await request(app).post('/api/analyze').send({ image: dataUrlOfSize(100, 'image/png') })
 
-    const [base64Arg, mimeArg] = analyzeImageMock.mock.calls[0]
+    expect(analyzeImageMock).toHaveBeenCalledTimes(1)
+    const [base64Arg, mimeArg] = analyzeImageMock.mock.calls[0] ?? []
     expect(mimeArg).toBe('image/png')
     expect(typeof base64Arg).toBe('string')
     expect(Buffer.from(base64Arg, 'base64').length).toBe(100)

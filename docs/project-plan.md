@@ -3,6 +3,7 @@
 **Project title:** Cultural Food Guide
 
 **Group members:**
+
 - Nuwan Tharaka, Deegoda Gamage
 - Ryan Pang Zhen Tan
 - Yeo You Ming
@@ -75,6 +76,13 @@ confidence instead of anxiety.
 - **Privacy:** only the captured image is sent for AI processing — no location,
   personal identifiers, or other user data is collected or stored, minimizing
   privacy risk for users
+- **Transparency about data transfer:** the app discloses in the interface that
+  the photo is sent to Google's Gemini API for analysis, not only to our own
+  server. Naming the third party is what makes the disclosure meaningful; stating
+  that we do not store the image, while omitting where it is forwarded, would be
+  accurate but misleading. Because the team is in the EEA, Google's paid-tier
+  data policy applies even on the free tier, so submitted images are not used to
+  train Google's models
 
 ## Expected deliverable
 

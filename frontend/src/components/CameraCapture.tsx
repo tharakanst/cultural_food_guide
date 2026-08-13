@@ -13,6 +13,21 @@ const MAX_PAYLOAD_BYTES = 10 * 1024 * 1024
  *  10 MB limit and the upload fast on a phone connection. */
 const MAX_CAPTURE_EDGE = 1600
 
+/**
+ * The decoded byte length of a base64 data URL.
+ *
+ * `dataUrl.length` (the encoded string length) is NOT the same quantity as
+ * MAX_PAYLOAD_BYTES, which is the backend's *decoded* limit — base64 inflates
+ * a payload by about a third, so comparing the encoded string length against
+ * the decoded limit rejects real files above roughly 7.5MB even though they
+ * are within the advertised 10MB and within what the backend accepts.
+ */
+function decodedDataUrlByteLength(dataUrl: string): number {
+  const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1)
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0
+  return Math.floor((base64.length * 3) / 4) - padding
+}
+
 type CameraStatus =
   /** Camera not requested yet. */
   | 'idle'
@@ -47,6 +62,17 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
   const streamRef = useRef<MediaStream | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
+  // The action buttons below are two structurally different element sets at
+  // the same position: 'live' renders "Take photo" / "Turn camera off",
+  // every other status renders "Use camera". React unmounts whichever one
+  // was focused on every transition between them, dropping a keyboard user's
+  // focus to <body>. These refs, plus the effect below, move focus onto the
+  // replacement deliberately instead of leaving it to fall away — see
+  // App.tsx's resultRef for the same pattern.
+  const takePhotoButtonRef = useRef<HTMLButtonElement | null>(null)
+  const useCameraButtonRef = useRef<HTMLButtonElement | null>(null)
+  const isFirstRender = useRef(true)
+
   /** Releases the camera. Safe to call repeatedly. */
   const stopCamera = useCallback(() => {
     const stream = streamRef.current
@@ -65,6 +91,21 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
   // keeps the "camera in use" indicator lit after navigating away.
   useEffect(() => stopCamera, [stopCamera])
 
+  // Deliberate focus target for every status transition (see the comment on
+  // the refs above). Skipped on first mount so opening the page does not
+  // steal focus onto "Use camera" before the user has done anything.
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
+    if (status === 'live') {
+      takePhotoButtonRef.current?.focus()
+    } else {
+      useCameraButtonRef.current?.focus()
+    }
+  }, [status])
+
   const startCamera = useCallback(async () => {
     setMessage(null)
 
@@ -72,9 +113,7 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
     // no camera support at all.
     if (!navigator.mediaDevices?.getUserMedia) {
       setStatus('unavailable')
-      setMessage(
-        'This browser cannot open the camera here. You can still upload a photo.',
-      )
+      setMessage('This browser cannot open the camera here. You can still upload a photo.')
       return
     }
 
@@ -123,10 +162,7 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
       return
     }
 
-    const scale = Math.min(
-      1,
-      MAX_CAPTURE_EDGE / Math.max(video.videoWidth, video.videoHeight),
-    )
+    const scale = Math.min(1, MAX_CAPTURE_EDGE / Math.max(video.videoWidth, video.videoHeight))
     const canvas = document.createElement('canvas')
     canvas.width = Math.round(video.videoWidth * scale)
     canvas.height = Math.round(video.videoHeight * scale)
@@ -171,9 +207,11 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
           setMessage('That file could not be read. Try another photo.')
           return
         }
-        // The data URL, not the file, is what gets posted — so the size limit
-        // is checked against the encoded string.
-        if (result.length > MAX_PAYLOAD_BYTES) {
+        // MAX_PAYLOAD_BYTES is the backend's *decoded* limit, so the encoded
+        // data URL is decoded back to real byte count before comparing —
+        // comparing the encoded string's length would reject real files
+        // above ~7.5MB despite them being within the advertised 10MB.
+        if (decodedDataUrlByteLength(result) > MAX_PAYLOAD_BYTES) {
           setMessage('That image is too large. Please choose one under 10 MB.')
           return
         }
@@ -223,6 +261,7 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
         {status === 'live' ? (
           <>
             <button
+              ref={takePhotoButtonRef}
               type="button"
               className="btn btn--primary"
               onClick={capturePhoto}
@@ -243,6 +282,7 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
           </>
         ) : (
           <button
+            ref={useCameraButtonRef}
             type="button"
             className="btn"
             onClick={() => void startCamera()}

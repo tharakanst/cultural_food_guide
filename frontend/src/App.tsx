@@ -15,11 +15,76 @@ const API_BASE_URL: string = import.meta.env.VITE_API_URL ?? 'http://localhost:4
  *  detail belongs in the server log, not on a phone screen. */
 const GENERIC_ERROR = 'Something went wrong while identifying this photo. Please try again.'
 
+/**
+ * A 429 is a usage limit, not a fault — see the `panel--notice` block below.
+ * `kind` on the 'error' variant lets rendering and the live-region text treat
+ * the two cases honestly instead of sharing "something went wrong" wording.
+ */
+type ErrorKind = 'request-failed' | 'rate-limited'
+
 type AppState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'error'; message: string }
+  | { status: 'error'; kind: ErrorKind; message: string; retryAfterSeconds: number | null }
   | { status: 'result'; data: AnalyzeResponse }
+
+/**
+ * The burst limiter's window is 60s and the daily limiter's is 24h (see
+ * backend/src/middleware/rateLimit.ts), so if `Retry-After` is readable at all
+ * a value at or under this is unambiguously the per-minute burst limit and
+ * anything above it is the daily one.
+ */
+const BURST_WINDOW_SECONDS = 60
+
+/**
+ * `Retry-After` is not on the CORS-safelisted response header list, so it is
+ * only readable here if the deployment explicitly sets
+ * `Access-Control-Expose-Headers: Retry-After` (frontend code cannot add
+ * that — it lives in backend CORS config). Read defensively and degrade to an
+ * honest, less specific message rather than assuming it is always present.
+ */
+function readRetryAfterSeconds(response: Response): number | null {
+  const raw = response.headers?.get('Retry-After')
+  if (!raw) return null
+  const seconds = Number(raw)
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null
+}
+
+function formatWait(seconds: number): string {
+  if (seconds < 90) {
+    return seconds <= 5 ? 'a few seconds' : 'about a minute'
+  }
+  const minutes = Math.ceil(seconds / 60)
+  if (minutes < 90) return `about ${minutes} minutes`
+  const hours = Math.ceil(seconds / 3600)
+  return hours <= 1 ? 'about an hour' : `about ${hours} hours`
+}
+
+/**
+ * The second sentence of the rate-limit panel — the part that says how long
+ * to wait and, where the response tells us, which of the two limits this is.
+ * Never call this "a problem on our side": it is the opposite, the service
+ * doing what it is designed to do under load.
+ */
+function describeRateLimitWait(retryAfterSeconds: number | null): string {
+  if (retryAfterSeconds === null) {
+    return (
+      'This is a usage limit, not a fault with your photo or our service. It is either a ' +
+      'short per-minute limit or the shared daily limit — wait a minute and try again, and ' +
+      'if it still will not go through, try again after a longer break.'
+    )
+  }
+  if (retryAfterSeconds <= BURST_WINDOW_SECONDS) {
+    return (
+      `This app allows a few requests per minute so it stays available to everyone nearby. ` +
+      `Wait ${formatWait(retryAfterSeconds)} and try again — the same photo is fine.`
+    )
+  }
+  return (
+    `The shared daily limit for this service has been reached. This is not a fault with ` +
+    `your photo — please try again in ${formatWait(retryAfterSeconds)}.`
+  )
+}
 
 /** Type guard rather than a cast: the response body is untrusted. */
 function isApiError(value: unknown): value is ApiError {
@@ -64,10 +129,17 @@ export function App() {
    *
    * Both 'result' and 'error' move focus, because a failure is just as much an
    * answer to the button press as a success is.
+   *
+   * Focus goes to the first heading inside the region rather than the
+   * container div itself where one exists: an unlabelled div announces
+   * nothing when it receives focus, whereas the heading gives a screen reader
+   * user actual content the moment focus lands. The div stays the fallback
+   * for the rare case a heading is not there.
    */
   useEffect(() => {
     if (state.status === 'result' || state.status === 'error') {
-      resultRef.current?.focus()
+      const heading = resultRef.current?.querySelector<HTMLElement>('h2')
+      ;(heading ?? resultRef.current)?.focus()
     }
   }, [state.status])
 
@@ -100,15 +172,34 @@ export function App() {
       const payload: unknown = await response.json().catch(() => null)
 
       if (!response.ok) {
+        // A 429 is the service doing exactly what it is designed to do under
+        // load, not a crash — it gets its own honest treatment rather than
+        // the generic request-failure wording. See describeRateLimitWait.
+        if (response.status === 429) {
+          setState({
+            status: 'error',
+            kind: 'rate-limited',
+            message: isApiError(payload) ? payload.error : GENERIC_ERROR,
+            retryAfterSeconds: readRetryAfterSeconds(response),
+          })
+          return
+        }
         setState({
           status: 'error',
+          kind: 'request-failed',
           message: isApiError(payload) ? payload.error : GENERIC_ERROR,
+          retryAfterSeconds: null,
         })
         return
       }
 
       if (!isAnalyzeResponse(payload)) {
-        setState({ status: 'error', message: GENERIC_ERROR })
+        setState({
+          status: 'error',
+          kind: 'request-failed',
+          message: GENERIC_ERROR,
+          retryAfterSeconds: null,
+        })
         return
       }
 
@@ -118,7 +209,9 @@ export function App() {
       if (error instanceof DOMException && error.name === 'AbortError') return
       setState({
         status: 'error',
+        kind: 'request-failed',
         message: 'Could not reach the server. Check your connection and try again.',
+        retryAfterSeconds: null,
       })
     }
   }, [image])
@@ -129,12 +222,16 @@ export function App() {
    * `identified: false` is announced as its own outcome rather than folded in
    * with a successful identification — a user who hears "result ready" and
    * finds a hedge has been misled.
+   *
+   * Deliberately silent for 'error': the error panel below is `role="alert"`,
+   * an assertive live region announced the moment it mounts. Repeating the
+   * same message here would fire it twice through two channels — the same
+   * "saying it twice is worse than saying it once" reasoning already applied
+   * to the loading spinner above.
    */
   let announcement = ''
   if (state.status === 'loading') {
     announcement = 'Identifying your photo. This usually takes a few seconds.'
-  } else if (state.status === 'error') {
-    announcement = `Error. ${state.message}`
   } else if (state.status === 'result') {
     announcement = state.data.identified
       ? `Identified as ${state.data.name}. Result below, including allergen information.`
@@ -193,7 +290,24 @@ export function App() {
           ref is stable and focus can land the moment the state flips.
         */}
         <div ref={resultRef} tabIndex={-1} className="result-region">
-          {state.status === 'error' ? (
+          {state.status === 'error' && state.kind === 'rate-limited' ? (
+            // A usage limit, not a fault — `panel--notice` (the same amber
+            // treatment as "we could not identify this") rather than
+            // `panel--error`, so the visual language does not itself imply
+            // something is broken. See describeRateLimitWait for why the
+            // wording never blames "our side".
+            <div className="panel panel--notice" role="alert">
+              {/* tabIndex={-1}: the focus-management effect above focuses
+                  the first heading in the region rather than the outer
+                  container, since a container div has no accessible name for
+                  a screen reader to announce on focus. */}
+              <h2 tabIndex={-1}>This service is busy</h2>
+              <p>{state.message}</p>
+              <p>{describeRateLimitWait(state.retryAfterSeconds)}</p>
+            </div>
+          ) : null}
+
+          {state.status === 'error' && state.kind === 'request-failed' ? (
             <div className="panel panel--error" role="alert">
               {/*
                 This is a request FAILURE, not an identification failure. The
@@ -203,7 +317,7 @@ export function App() {
                 identification failure is handled in FoodResult, where the
                 analysis actually ran and returned identified: false.
               */}
-              <h2>Something went wrong</h2>
+              <h2 tabIndex={-1}>Something went wrong</h2>
               <p>{state.message}</p>
               <p>
                 This is a problem on our side, not with your photo. Try again in a moment — the same
@@ -217,9 +331,21 @@ export function App() {
       </main>
 
       <footer className="app__footer">
+        {/*
+          Transparency about the onward transfer, not just our own handling.
+          The previous wording said only "sent to our server", which a reader
+          would reasonably take to mean the photo stops there. It does not — it
+          is forwarded to Google's Gemini API for analysis. Naming the third
+          party is the honest disclosure; describing our server alone is not.
+        */}
         <p>
-          Photos are sent to our server for identification and are not stored. No account, no
-          location, no tracking.
+          Your photo is sent to our server and then to Google&rsquo;s Gemini AI service, which
+          analyses it and generates the result. Photos are not stored by us and are discarded once
+          the result is returned. No account, no location, no tracking.
+        </p>
+        <p>
+          Results are AI-generated and can be wrong. Always check official packaging or ask staff
+          before relying on allergen information.
         </p>
       </footer>
     </div>

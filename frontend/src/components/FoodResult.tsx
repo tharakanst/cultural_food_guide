@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AnalyzeResponse } from '../../../shared/types'
 import { ReferenceImage } from './ReferenceImage'
 
@@ -11,6 +11,44 @@ interface FoodResultProps {
  *  in that case. */
 function speechSupported(): boolean {
   return typeof window !== 'undefined' && 'speechSynthesis' in window
+}
+
+/** Longest alt text this app will produce before truncating. A screen reader
+ *  reads the whole alt attribute aloud; a 300-character alt is its own
+ *  accessibility problem, so this stays short enough to be useful. */
+const MAX_ALT_DESCRIPTION_LENGTH = 150
+
+/**
+ * Builds meaningful alt text for the reference photo by folding in the
+ * dish's `description`, rather than the bare "Photograph of {name}." — which
+ * tells a screen-reader user nothing the visible heading two lines above
+ * did not already say, when the whole point of the image is to let them
+ * cross-check what is in front of them against the identified dish.
+ *
+ * Truncated at a sentence boundary where one exists within the limit, so the
+ * alt text never trails off mid-word.
+ */
+function referenceImageAlt(name: string, description: string): string {
+  const trimmed = description.trim()
+  if (!trimmed) return `Photograph of ${name}.`
+
+  if (trimmed.length <= MAX_ALT_DESCRIPTION_LENGTH) {
+    return `Photograph of ${name}: ${trimmed}`
+  }
+
+  const truncated = trimmed.slice(0, MAX_ALT_DESCRIPTION_LENGTH)
+  const lastSentenceEnd = Math.max(
+    truncated.lastIndexOf('. '),
+    truncated.lastIndexOf('! '),
+    truncated.lastIndexOf('? '),
+  )
+  const lastSpace = truncated.lastIndexOf(' ')
+  const cut =
+    lastSentenceEnd > MAX_ALT_DESCRIPTION_LENGTH * 0.4
+      ? truncated.slice(0, lastSentenceEnd + 1)
+      : `${truncated.slice(0, lastSpace > 0 ? lastSpace : truncated.length)}…`
+
+  return `Photograph of ${name}: ${cut}`
 }
 
 /**
@@ -36,11 +74,59 @@ export function FoodResult({ result }: FoodResultProps) {
   const [speaking, setSpeaking] = useState(false)
   const canSpeak = speechSupported()
 
+  /*
+   * The TTS live-region announcement.
+   *
+   * A separate piece of state from `speaking`, rather than deriving the text
+   * directly from it: the original version showed text only while speaking
+   * was true and reverted to '' the instant it stopped, so stopping or
+   * finishing was never announced at all — the author's own comment already
+   * noted AT will not reliably re-read a toggled button label, but that
+   * reasoning was only applied to the start case. `isSpeakingRef` tracks
+   * whether speech is actually in progress, independently of React state, so
+   * the various stop paths (button, cleanup, onend, onerror) can each decide
+   * whether a "stopped" announcement is actually warranted.
+   */
+  const [ttsAnnouncement, setTtsAnnouncement] = useState('')
+  const isSpeakingRef = useRef(false)
+  const announcementTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
+
+  const announceTts = useCallback((text: string, autoClearMs?: number) => {
+    if (announcementTimeoutRef.current !== null) {
+      window.clearTimeout(announcementTimeoutRef.current)
+      announcementTimeoutRef.current = null
+    }
+    setTtsAnnouncement(text)
+    // Cleared after a few seconds rather than left indefinitely — a stale
+    // "Stopped reading" announcement sitting in the live region forever is
+    // its own confusion for anyone who opens a screen reader's virtual
+    // cursor and lands on it later.
+    if (autoClearMs) {
+      announcementTimeoutRef.current = window.setTimeout(() => {
+        setTtsAnnouncement('')
+        announcementTimeoutRef.current = null
+      }, autoClearMs)
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (announcementTimeoutRef.current !== null) {
+        window.clearTimeout(announcementTimeoutRef.current)
+      }
+    }
+  }, [])
+
   const stopSpeaking = useCallback(() => {
     if (!speechSupported()) return
+    const wasSpeaking = isSpeakingRef.current
     window.speechSynthesis.cancel()
+    isSpeakingRef.current = false
     setSpeaking(false)
-  }, [])
+    if (wasSpeaking) {
+      announceTts('Stopped reading.', 4000)
+    }
+  }, [announceTts])
 
   // Never let speech outlive the result on screen. The cleanup runs both on
   // unmount and whenever a new result replaces this one, so the app cannot end
@@ -52,19 +138,27 @@ export function FoodResult({ result }: FoodResultProps) {
 
     window.speechSynthesis.cancel()
 
-    const spoken = recipe
-      .map((step, index) => `Step ${index + 1}. ${step}`)
-      .join(' ')
+    const spoken = recipe.map((step, index) => `Step ${index + 1}. ${step}`).join(' ')
 
     const utterance = new SpeechSynthesisUtterance(spoken)
     utterance.rate = 0.95 // Slightly slow — the listener is reading in a
     // second language and following along with their hands busy.
-    utterance.onend = () => setSpeaking(false)
-    utterance.onerror = () => setSpeaking(false)
+    utterance.onend = () => {
+      isSpeakingRef.current = false
+      setSpeaking(false)
+      announceTts('Finished reading the recipe steps.', 4000)
+    }
+    utterance.onerror = () => {
+      isSpeakingRef.current = false
+      setSpeaking(false)
+      announceTts('Reading stopped due to an error.', 4000)
+    }
 
     window.speechSynthesis.speak(utterance)
+    isSpeakingRef.current = true
     setSpeaking(true)
-  }, [recipe])
+    announceTts('Reading the recipe steps aloud.')
+  }, [recipe, announceTts])
 
   /*
    * The honest "could not identify this" state.
@@ -79,10 +173,14 @@ export function FoodResult({ result }: FoodResultProps) {
     return (
       <div className="result">
         <div className="panel panel--notice">
-          <h2>We could not identify this</h2>
+          {/* tabIndex={-1}: App's focus-management effect focuses the first
+              heading inside the result region rather than the container div,
+              since an unlabelled div announces nothing to a screen reader on
+              focus. */}
+          <h2 tabIndex={-1}>We could not identify this</h2>
           <p>
-            The photo could not be matched to a food, product or menu item with
-            enough confidence to tell you anything useful about it.
+            The photo could not be matched to a food, product or menu item with enough confidence to
+            tell you anything useful about it.
           </p>
           <p>Photos usually work better when:</p>
           <ul className="result__list">
@@ -100,11 +198,15 @@ export function FoodResult({ result }: FoodResultProps) {
   return (
     <div className="result">
       <div>
-        <h2>{name}</h2>
+        {/* tabIndex={-1}: App's focus-management effect focuses the first
+            heading inside the result region rather than the container div,
+            since an unlabelled div announces nothing to a screen reader on
+            focus. */}
+        <h2 tabIndex={-1}>{name}</h2>
         {description ? <p>{description}</p> : null}
         <ReferenceImage
           url={referenceImageUrl}
-          alt={`Photograph of ${name}.`}
+          alt={referenceImageAlt(name, description)}
           caption="Reference photograph from Wikimedia Commons."
         />
       </div>
@@ -127,9 +229,8 @@ export function FoodResult({ result }: FoodResultProps) {
           </ul>
         ) : (
           <p>
-            No allergen information could be determined from this photo. That is
-            not the same as &ldquo;no allergens&rdquo; — check the packaging or
-            ask staff before eating this.
+            No allergen information could be determined from this photo. That is not the same as
+            &ldquo;no allergens&rdquo; — check the packaging or ask staff before eating this.
           </p>
         )}
       </section>
@@ -163,9 +264,10 @@ export function FoodResult({ result }: FoodResultProps) {
           ) : null}
 
           {/* State change announced explicitly: a screen reader will not
-              re-announce the button label on its own in every browser. */}
-          <p className="visually-hidden" role="status">
-            {speaking ? 'Reading the recipe steps aloud.' : ''}
+              re-announce the button label on its own in every browser. This
+              covers starting AND stopping/finishing — see announceTts. */}
+          <p className="visually-hidden" role="status" aria-live="polite">
+            {ttsAnnouncement}
           </p>
 
           <ol className="result__list result__list--ordered">
