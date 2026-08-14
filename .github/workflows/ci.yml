@@ -1,0 +1,117 @@
+# Continuous integration for Cultural Food Guide.
+#
+# This is the detective layer. The pre-commit hook in .githooks/ is the
+# preventive one — it stops a secret entering history in the first place, but it
+# is per-machine, opt-in (`git config core.hooksPath .githooks`), and skippable
+# with `git commit --no-verify`. Nothing here can be skipped from a laptop.
+#
+# It needs no secrets: every provider call in the test suite is mocked, so there
+# is no API key in this workflow and nothing for it to leak.
+
+name: CI
+
+# Runs on every branch, not just main. Four people are working in parallel on
+# separate feature branches, and waiting until pull-request time to discover a
+# break means discovering it after the work is finished rather than during it.
+#
+# The pull_request trigger is kept as well so a PR is checked against the state
+# it would actually merge into, which a branch push cannot tell you.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+# A new push to the same branch makes the previous run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install backend and frontend dependencies
+        run: npm run install:all
+
+      # Split rather than calling `npm run verify` so a failure names which
+      # stage broke instead of one opaque red cross.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+
+    steps:
+      # Full history: the local hook only ever sees one commit's staged changes,
+      # so a key committed earlier in a branch and "fixed" in a later commit is
+      # invisible to it. This sees every commit being proposed.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan changed commits for API keys
+        run: |
+          BEFORE="${{ github.event.before }}"
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Everything the PR proposes, against what it would merge into.
+            RANGE="origin/${{ github.base_ref }}...HEAD"
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            # First push of a new branch: there is no previous state to compare
+            # against, so scan everything the branch adds on top of main.
+            RANGE="origin/${{ github.event.repository.default_branch }}...HEAD"
+          else
+            # Subsequent push: every commit in this push, not just the last one.
+            # HEAD~1..HEAD would miss a key added three commits ago and left in.
+            RANGE="$BEFORE..HEAD"
+          fi
+
+          echo "Scanning $RANGE"
+
+          MATCHES=$(git diff "$RANGE" -U0 \
+            | grep -E '^\+' \
+            | grep -E 'AIza[0-9A-Za-z_-]{20,}|sk-ant-[0-9A-Za-z_-]{20,}|sk-proj-[0-9A-Za-z_-]{20,}' \
+            || true)
+
+          if [ -n "$MATCHES" ]; then
+            echo "::error::Something shaped like an API key was found in this change."
+            echo "$MATCHES"
+            echo ""
+            echo "If this is a real key it is now in the remote and must be ROTATED —"
+            echo "removing the commit is not enough once it has been pushed."
+            exit 1
+          fi
+
+          echo "No key material found."
+
+      - name: Refuse a committed .env
+        run: |
+          if git ls-files | grep -qE '(^|/)\.env$'; then
+            echo "::error::A .env file is tracked in git. It must be removed and the key rotated."
+            exit 1
+          fi
+          echo "No .env tracked."

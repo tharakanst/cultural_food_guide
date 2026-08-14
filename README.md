@@ -91,6 +91,23 @@ npm run verify
 
 Runs type-checking, tests, and the production build across both sides.
 
+The same checks run in GitHub Actions on every push and pull request
+([.github/workflows/ci.yml](.github/workflows/ci.yml)), plus a secret scan over
+the whole set of proposed commits.
+
+Two layers, deliberately, because they catch different things at different
+moments:
+
+|           | `.githooks/pre-commit`                                        | GitHub Actions                      |
+| --------- | ------------------------------------------------------------- | ----------------------------------- |
+| Runs      | Before the commit exists, on your machine                     | After the push, on a neutral server |
+| Skippable | Yes — `--no-verify`, or forgetting the `core.hooksPath` setup | No                                  |
+| Nature    | **Preventive**                                                | **Detective**                       |
+
+This matters most for secrets. If the hook catches a key, nothing bad happened.
+If CI catches it, the key is already in the remote — it must be rotated, because
+deleting the commit does not unpublish it.
+
 ## Project structure
 
 ```
