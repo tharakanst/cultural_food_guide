@@ -22,28 +22,7 @@ interface ReferenceImageProps {
   caption?: string
 }
 
-/**
- * Extract the Wikimedia Commons filename from an upload.wikimedia.org URL.
- * For example, "https://upload.wikimedia.org/.../Salmon_soup.jpg" → "Salmon_soup.jpg"
- */
-function extractWikimediaFilename(url: string): string | null {
-  try {
-    const parsed = new URL(url)
-    const pathname = parsed.pathname
-    const filename = pathname.split('/').pop()
-    return filename || null
-  } catch {
-    return null
-  }
-}
 
-/**
- * Build a Wikimedia Commons page URL from the filename.
- * "Salmon_soup.jpg" → "https://commons.wikimedia.org/wiki/File:Salmon_soup.jpg"
- */
-function buildCommonsPageUrl(filename: string): string {
-  return `https://commons.wikimedia.org/wiki/File:${filename}`
-}
 
 /**
  * Renders a reference photograph of the dish, or nothing at all.
@@ -65,35 +44,19 @@ export function ReferenceImage({ url, alt, caption }: ReferenceImageProps) {
     return null
   }
 
-  // Extract filename and build Commons link for attribution
-  const filename = extractWikimediaFilename(url)
-  const commonsPageUrl = filename ? buildCommonsPageUrl(filename) : null
-
   return (
     <figure className="reference-figure">
       <img
-        className="reference-image"
         src={url}
         alt={alt}
+        className="reference-figure__img"
         loading="lazy"
         decoding="async"
         onError={() => setFailed(true)}
       />
-      <figcaption className="reference-image__caption">
-        {caption ? (
-          <>
-            {caption}
-            {commonsPageUrl ? (
-              <>
-                {' '}
-                <a href={commonsPageUrl} target="_blank" rel="noopener noreferrer">
-                  View on Wikimedia Commons
-                </a>
-              </>
-            ) : null}
-          </>
-        ) : null}
-      </figcaption>
+      {caption ? (
+        <figcaption className="reference-image__caption">{caption}</figcaption>
+      ) : null}
     </figure>
   )
 }
