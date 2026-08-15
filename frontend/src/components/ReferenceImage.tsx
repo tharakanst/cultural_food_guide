@@ -23,6 +23,29 @@ interface ReferenceImageProps {
 }
 
 /**
+ * Extract the Wikimedia Commons filename from an upload.wikimedia.org URL.
+ * For example, "https://upload.wikimedia.org/.../Salmon_soup.jpg" → "Salmon_soup.jpg"
+ */
+function extractWikimediaFilename(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    const pathname = parsed.pathname
+    const filename = pathname.split('/').pop()
+    return filename || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Build a Wikimedia Commons page URL from the filename.
+ * "Salmon_soup.jpg" → "https://commons.wikimedia.org/wiki/File:Salmon_soup.jpg"
+ */
+function buildCommonsPageUrl(filename: string): string {
+  return `https://commons.wikimedia.org/wiki/File:${filename}`
+}
+
+/**
  * Renders a reference photograph of the dish, or nothing at all.
  *
  * Two absent cases, both of which render nothing rather than a broken image
@@ -42,6 +65,10 @@ export function ReferenceImage({ url, alt, caption }: ReferenceImageProps) {
     return null
   }
 
+  // Extract filename and build Commons link for attribution
+  const filename = extractWikimediaFilename(url)
+  const commonsPageUrl = filename ? buildCommonsPageUrl(filename) : null
+
   return (
     <figure className="reference-figure">
       <img
@@ -52,9 +79,21 @@ export function ReferenceImage({ url, alt, caption }: ReferenceImageProps) {
         decoding="async"
         onError={() => setFailed(true)}
       />
-      {caption ? (
-        <figcaption className="reference-image__caption">{caption}</figcaption>
-      ) : null}
+      <figcaption className="reference-image__caption">
+        {caption ? (
+          <>
+            {caption}
+            {commonsPageUrl ? (
+              <>
+                {' '}
+                <a href={commonsPageUrl} target="_blank" rel="noopener noreferrer">
+                  View on Wikimedia Commons
+                </a>
+              </>
+            ) : null}
+          </>
+        ) : null}
+      </figcaption>
     </figure>
   )
 }
