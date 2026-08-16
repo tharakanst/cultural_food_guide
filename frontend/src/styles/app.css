@@ -146,11 +146,6 @@ p {
   border-color: var(--color-notice-accent);
 }
 
-.panel--notice h2::before {
-  content: 'ℹ️ ';
-  margin-right: var(--space-xs);
-}
-
 .panel--error {
   background: var(--color-error-bg);
   border-color: var(--color-error-accent);
@@ -186,6 +181,13 @@ p {
   padding: var(--space-md);
   color: var(--color-text-muted);
   text-align: center;
+}
+
+/* The hint is a permanently mounted live region (see CameraCapture), so it is
+   present even with nothing to say. Collapse it when empty so the padding does
+   not leave a gap under the camera controls. */
+.camera__hint:empty {
+  display: none;
 }
 
 .camera__preview {
@@ -297,11 +299,6 @@ p {
   margin-top: 0;
 }
 
-.allergens__heading::before {
-  content: '⚠️ ';
-  margin-right: var(--space-xs);
-}
-
 .allergens__list {
   margin: 0;
   padding-left: 1.5rem;
@@ -312,17 +309,24 @@ p {
   margin-bottom: var(--space-xs);
 }
 
+/*
+ * The <figure> wrapper needs an explicit margin reset.
+ *
+ * Browsers apply `margin: 1em 40px` to <figure> by default. Unreset, that eats
+ * 80px of horizontal space — on a 375px phone, where the app content is around
+ * 343px wide, the reference photo would sit deeply indented and out of line
+ * with everything above it. Only the <img> inside was being reset, so the
+ * wrapper's default survived.
+ */
+.reference-figure {
+  margin: 0;
+  padding: 0;
+}
+
 .reference-figure__img {
   margin: 0;
   padding: 0;
   width: 100%;
-}
-
-.reference-image {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  aspect-ratio: 1 / 1;
 }
 
 .reference-image__caption {
@@ -358,10 +362,16 @@ p {
   font-weight: 500;
 }
 
-.disclaimer::before {
-  content: 'ℹ️ ';
-  margin-right: var(--space-xs);
-}
+/*
+ * Icons for notices, allergens and the disclaimer are in the markup as
+ * <span aria-hidden="true">, not CSS ::before content.
+ *
+ * aria-hidden cannot be applied to a pseudo-element, and generated content is
+ * sometimes included in the accessible name — with emoji pronounced
+ * inconsistently across screen readers ("warning sign emoji", or nothing).
+ * These icons sit on headings that receive programmatic focus, so a stray
+ * announcement would land exactly when the user is listening for the message.
+ */
 
 /* ---- Status ------------------------------------------------------------ */
 
@@ -388,7 +398,8 @@ p {
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {

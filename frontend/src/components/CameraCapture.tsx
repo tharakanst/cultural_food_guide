@@ -73,6 +73,18 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
   const useCameraButtonRef = useRef<HTMLButtonElement | null>(null)
   const isFirstRender = useRef(true)
 
+  /*
+   * Set when leaving 'live' because a photo was successfully captured, as
+   * opposed to the camera being turned off or becoming unavailable.
+   *
+   * All three transitions land on status 'idle', but they mean opposite things
+   * for focus: after turning the camera off, "Use camera" is the sensible place
+   * to be, while after a successful capture the user is finished with the
+   * camera and the next control is "Identify this food". Pulling focus back to
+   * "Use camera" there sends them backwards past the button they now want.
+   */
+  const capturedRef = useRef(false)
+
   /** Releases the camera. Safe to call repeatedly. */
   const stopCamera = useCallback(() => {
     const stream = streamRef.current
@@ -133,9 +145,17 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
     }
     if (status === 'live') {
       takePhotoButtonRef.current?.focus()
-    } else {
-      useCameraButtonRef.current?.focus()
+      return
     }
+    // A successful capture also lands here, but the user has finished with the
+    // camera — "Identify this food" has just appeared and is what they want
+    // next. Leave focus where it is rather than dragging it backwards, and let
+    // the natural tab order carry them forward.
+    if (capturedRef.current) {
+      capturedRef.current = false
+      return
+    }
+    useCameraButtonRef.current?.focus()
   }, [status])
 
   const startCamera = useCallback(async () => {
@@ -203,6 +223,9 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
     // Release the camera as soon as we have the frame — nothing needs it after
     // this, and holding it drains the battery and keeps the indicator lit.
     stopCamera()
+    // Tells the focus effect this transition to 'idle' was a success, not the
+    // camera being switched off, so focus is not dragged back to "Use camera".
+    capturedRef.current = true
     setStatus('idle')
     setPreview(dataUrl)
     onCapture(dataUrl)
@@ -342,11 +365,24 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
         </label>
       </div>
 
-      {message ? (
-        <p className="camera__hint" role="status">
-          {message}
-        </p>
-      ) : null}
+      {/*
+        Permanently mounted, with only its text changing — never conditionally
+        rendered.
+
+        Assistive technology reliably announces changes to a live region that
+        already existed; a region created at the same moment as its content is
+        frequently missed. This one carries real content — "camera not
+        available", "please choose a JPEG, PNG or WebP", "image too large" — so
+        a user who denies camera permission or picks an oversized file would
+        otherwise hear nothing at all. App.tsx and FoodResult.tsx already use
+        this pattern; this component was the exception.
+
+        `:empty` in the stylesheet collapses the padding when there is nothing
+        to say, so the permanent element costs no visual space.
+      */}
+      <p className="camera__hint" role="status" aria-live="polite">
+        {message ?? ''}
+      </p>
     </section>
   )
 }

@@ -301,7 +301,13 @@ export function App() {
                   the first heading in the region rather than the outer
                   container, since a container div has no accessible name for
                   a screen reader to announce on focus. */}
-              <h2 tabIndex={-1}>This service is busy</h2>
+              {/* Icon in markup, not a CSS ::before, so aria-hidden can keep
+                  it out of the announcement — see FoodResult's allergen
+                  heading for the reasoning. */}
+              <h2 tabIndex={-1}>
+                <span aria-hidden="true">ℹ️ </span>
+                This service is busy
+              </h2>
               <p>{state.message}</p>
               <p>{describeRateLimitWait(state.retryAfterSeconds)}</p>
               <div className="actions">

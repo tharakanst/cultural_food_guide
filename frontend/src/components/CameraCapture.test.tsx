@@ -252,6 +252,10 @@ describe('CameraCapture — oversized file', () => {
     await userEvent.upload(screen.getByLabelText(/upload a photo/i), file)
 
     await waitFor(() => expect(onCapture).toHaveBeenCalledTimes(1))
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+
+    // The status region is permanently mounted (assistive technology misses
+    // live regions created at the same moment as their content), so the
+    // assertion is that it says nothing — not that it is absent.
+    expect(screen.getByRole('status')).toBeEmptyDOMElement()
   })
 })
