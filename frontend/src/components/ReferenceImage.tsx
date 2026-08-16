@@ -22,6 +22,8 @@ interface ReferenceImageProps {
   caption?: string
 }
 
+
+
 /**
  * Renders a reference photograph of the dish, or nothing at all.
  *
@@ -45,9 +47,9 @@ export function ReferenceImage({ url, alt, caption }: ReferenceImageProps) {
   return (
     <figure className="reference-figure">
       <img
-        className="reference-image"
         src={url}
         alt={alt}
+        className="reference-figure__img"
         loading="lazy"
         decoding="async"
         onError={() => setFailed(true)}

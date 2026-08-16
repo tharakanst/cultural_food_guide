@@ -146,6 +146,11 @@ p {
   border-color: var(--color-notice-accent);
 }
 
+.panel--notice h2::before {
+  content: 'ℹ️ ';
+  margin-right: var(--space-xs);
+}
+
 .panel--error {
   background: var(--color-error-bg);
   border-color: var(--color-error-accent);
@@ -292,6 +297,11 @@ p {
   margin-top: 0;
 }
 
+.allergens__heading::before {
+  content: '⚠️ ';
+  margin-right: var(--space-xs);
+}
+
 .allergens__list {
   margin: 0;
   padding-left: 1.5rem;
@@ -302,13 +312,17 @@ p {
   margin-bottom: var(--space-xs);
 }
 
-.reference-image {
+.reference-figure__img {
+  margin: 0;
+  padding: 0;
   width: 100%;
-  height: auto;
-  max-width: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  display: block;
+}
+
+.reference-image {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  aspect-ratio: 1 / 1;
 }
 
 .reference-image__caption {
@@ -317,14 +331,36 @@ p {
   margin-top: var(--space-xs);
 }
 
+.reference-image__caption a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  font-weight: 500;
+}
+
+.reference-image__caption a:hover {
+  text-decoration-thickness: 2px;
+}
+
+.reference-image__caption a:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 .disclaimer {
   color: var(--color-text);
   background: var(--color-notice-bg);
-  border-left: 4px solid var(--color-notice-accent);
+  border: 2px solid var(--color-notice-accent);
   border-radius: var(--radius);
   padding: var(--space-md);
   margin: 0;
-  font-size: 1rem;
+  font-size: inherit;
+  font-weight: 500;
+}
+
+.disclaimer::before {
+  content: 'ℹ️ ';
+  margin-right: var(--space-xs);
 }
 
 /* ---- Status ------------------------------------------------------------ */
@@ -351,9 +387,19 @@ p {
   }
 }
 
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .spinner {
-    animation-duration: 4s;
+    animation: pulse 1.8s ease-in-out infinite;
+    border-top-color: var(--color-border);
   }
 
   *,

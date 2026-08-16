@@ -304,6 +304,16 @@ export function App() {
               <h2 tabIndex={-1}>This service is busy</h2>
               <p>{state.message}</p>
               <p>{describeRateLimitWait(state.retryAfterSeconds)}</p>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => void analyze()}
+                  disabled={false}
+                >
+                  Try again
+                </button>
+              </div>
             </div>
           ) : null}
 
@@ -323,6 +333,16 @@ export function App() {
                 This is a problem on our side, not with your photo. Try again in a moment — the same
                 photo is fine.
               </p>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => void analyze()}
+                  disabled={false}
+                >
+                  Try again
+                </button>
+              </div>
             </div>
           ) : null}
 
