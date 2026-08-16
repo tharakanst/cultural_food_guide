@@ -91,6 +91,38 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
   // keeps the "camera in use" indicator lit after navigating away.
   useEffect(() => stopCamera, [stopCamera])
 
+  /*
+   * Attach the live stream to the <video> once React has actually rendered it.
+   *
+   * This must be an effect rather than something scheduled from startCamera:
+   * effects run after the DOM commit, so the element is guaranteed to exist.
+   * Doing it any earlier means videoRef.current is still null.
+   *
+   * `muted` is set as a property as well as an attribute — some browsers
+   * evaluate autoplay eligibility from the property, and a stream that is not
+   * considered muted can have play() rejected, leaving a black frame.
+   */
+  useEffect(() => {
+    if (status !== 'live') return
+    const video = videoRef.current
+    const stream = streamRef.current
+    if (!video || !stream) return
+
+    video.srcObject = stream
+    video.muted = true
+
+    // play() can reject (autoplay refused) or throw synchronously (jsdom has no
+    // implementation, and some browsers throw rather than returning a promise).
+    // Neither is fatal — the stream is already attached and capture still works
+    // — but an uncaught throw here would take the whole component down.
+    try {
+      const playback = video.play() as Promise<void> | undefined
+      void playback?.catch(() => {})
+    } catch {
+      /* No playback support; the attached stream is what matters. */
+    }
+  }, [status])
+
   // Deliberate focus target for every status transition (see the comment on
   // the refs above). Skipped on first mount so opening the page does not
   // steal focus onto "Use camera" before the user has done anything.
@@ -130,20 +162,12 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
       setStatus('live')
       setPreview(null)
 
-      // The <video> only exists once status is 'live', so attach on the next
-      // frame rather than synchronously.
-      queueMicrotask(() => {
-        const video = videoRef.current
-        if (!video) {
-          // Unmounted or re-rendered away while permission was pending.
-          stopCamera()
-          return
-        }
-        video.srcObject = stream
-        void video.play().catch(() => {
-          /* Autoplay refusal is non-fatal; the poster frame still shows. */
-        })
-      })
+      // Attaching the stream to the <video> happens in the effect below, not
+      // here. The element does not exist until React has rendered status
+      // 'live', and a microtask queued at this point runs BEFORE that commit —
+      // so videoRef.current is still null, and the old code treated that as
+      // "unmounted" and stopped the camera it had just started. The result was
+      // live controls above a permanently blank preview.
     } catch {
       // Deliberately not surfacing the DOMException name: for the user the
       // outcome is identical, and the upload path is the answer either way.
