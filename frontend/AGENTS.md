@@ -37,6 +37,20 @@ These come from the project plan and are not optional:
   without it rather than showing a broken image.
 - Loading, error, and result states are announced to screen readers via
   `aria-live` — not only rendered visually.
+- **Live regions are mounted permanently; only their text changes.** Never
+  `{message ? <p role="status">…</p> : null}`. Assistive technology reliably
+  announces changes to a region that already existed, and frequently misses one
+  created at the same moment as its content — so a conditionally rendered region
+  announces nothing at all. Render the element always and set its text to `''`
+  when there is nothing to say, with a `:empty { display: none }` rule if the
+  spacing matters. This has been introduced and fixed twice; do not reintroduce
+  it.
+- **Decorative icons go in the markup as `<span aria-hidden="true">`, never as
+  CSS `::before` content.** `aria-hidden` cannot be applied to a pseudo-element,
+  generated content is sometimes folded into the accessible name, and screen
+  readers pronounce emoji inconsistently. The icons here sit on headings that
+  receive programmatic focus, so a stray announcement lands exactly when the
+  user is listening for the message — including the allergen heading.
 - Every control is reachable and operable by keyboard. Be careful with the file
   upload control: a visually hidden input inside a label commonly loses keyboard
   focus.

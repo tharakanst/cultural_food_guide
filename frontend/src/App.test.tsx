@@ -90,7 +90,15 @@ describe('App — analyze flow', () => {
     const { user, button } = await uploadAndWaitForButton()
     await user.click(button)
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/identifying your photo/i)
+    // There is more than one live region on the page — App's announcement
+    // region and CameraCapture's permanently mounted hint — so assert that the
+    // announcement is made in one of them rather than assuming a single match.
+    await waitFor(() => {
+      const announced = screen
+        .getAllByRole('status')
+        .some((region) => /identifying your photo/i.test(region.textContent ?? ''))
+      expect(announced).toBe(true)
+    })
 
     resolveFetch(jsonResponse(identifiedResult))
 
