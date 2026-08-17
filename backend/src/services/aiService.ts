@@ -1,5 +1,5 @@
 /**
- * AI provider service — Gemini Flash multimodal call, prompt, and response
+ * AI provider service — OpenAI multimodal call, prompt, and response
  * parsing.
  *
  * OWNERSHIP: this file belongs to the `llm-integration` agent. The signature
@@ -8,7 +8,7 @@
  * write. Do not add prompt text or provider calls here from any other role.
  *
  * Rules that apply to whoever implements it:
- * - GEMINI_API_KEY is read from process.env here and nowhere else.
+ * - OPENAI_API_KEY is read from process.env here and nowhere else.
  * - Never log the image, the API key, or model output containing user content.
  * - A failed JSON parse must produce a clean thrown Error, not a crash.
  *
@@ -19,8 +19,7 @@
  * only; the route logs those and returns a generic message to the client.
  */
 
-import { GoogleGenerativeAI, FinishReason, SchemaType } from '@google/generative-ai'
-import type { GenerativeModel, ResponseSchema } from '@google/generative-ai'
+import OpenAI from 'openai'
 import type { AnalyzeResponse } from '../../../shared/types'
 
 /**
@@ -34,19 +33,17 @@ import type { AnalyzeResponse } from '../../../shared/types'
 export type AiAnalysis = Omit<AnalyzeResponse, 'referenceImageUrl'>
 
 /**
- * Free tier, multimodal, fast enough for a phone waiting on a result.
+ * Vision-capable, supports strict JSON schema output, $0.20/M input tokens.
+ * Verified against the team's actual OpenAI account rather than assumed from
+ * the model name — in particular that it honours `detail: 'low'` (339 tokens
+ * versus 2,298 for the other cheap candidates on the same 1600x1200 image) and
+ * that strict schema mode works on it.
  *
- * The `-latest` alias rather than a pinned version deliberately. A pinned
- * `gemini-2.5-flash` broke here with "no longer available to new users" — the
- * model was retired for new keys while still appearing in the model list, so a
- * teammate setting up a fresh key would hit a 404 that nobody else saw. The
- * alias tracks whatever the current Flash model is.
- *
- * The trade-off is that model behaviour can shift under us without a code
- * change. For a prototype that is the better bet; a production system would
- * pin a version and update it deliberately.
+ * Pinned rather than an alias: this is a straight swap of provider, not the
+ * place to reintroduce the "model quietly changes under us" trade-off Gemini's
+ * `-latest` alias made.
  */
-const MODEL_NAME = 'gemini-flash-latest'
+const MODEL_NAME = 'gpt-5.6-luna'
 
 /**
  * Give up rather than hold the user's request open indefinitely. Generous
@@ -55,20 +52,34 @@ const MODEL_NAME = 'gemini-flash-latest'
 const REQUEST_TIMEOUT_MS = 45_000
 
 /**
- * gemini-2.5-flash spends part of its output budget on internal reasoning
- * before it emits a token of JSON, and this SDK version predates
- * `thinkingConfig` so that budget cannot be capped separately. The ceiling is
- * therefore set well above what the JSON itself needs — too low and the model
- * thinks until it hits the limit and returns nothing parseable.
+ * Ceiling on the completion, not a target — the schema's own fields are far
+ * short of this. Headroom exists so a full description, allergen list, and
+ * ten-step recipe are never cut off mid-string, and so any internal reasoning
+ * the model spends before its first JSON token doesn't starve the output.
  */
 const MAX_OUTPUT_TOKENS = 8192
 
 /**
- * Low but not zero. Identification and allergen inference should be as
- * reproducible as the model allows; a little headroom keeps the prose from
- * degenerating into the same stock phrasing for every dish.
+ * There is deliberately no TEMPERATURE constant here. gpt-5.6-luna is a
+ * reasoning-family model and rejects a custom `temperature` outright —
+ * `400 Unsupported value: 'temperature' does not support 0.2 with this
+ * model. Only the default (1) value is supported.` — confirmed against the
+ * real API while wiring this up. The Gemini implementation could turn this
+ * dial to make output more reproducible; this model does not expose it, so
+ * the parameter is simply omitted from the request rather than sent as 1.
  */
-const TEMPERATURE = 0.2
+
+/**
+ * Vision fidelity for the photographed image.
+ *
+ * 'high' lets the model read small text on Finnish product labels — label OCR
+ * is often the strongest evidence available (see the "Evidence and certainty"
+ * section of SYSTEM_PROMPT below), so this is not a place to save cost by
+ * default. 'low' is a working ~7x cost lever if spend against the shared quota
+ * ever becomes a concern: 339 tokens versus 2,298 for 'high' on the same
+ * 1600x1200 image on this model, at the cost of not resolving small print.
+ */
+const IMAGE_DETAIL: 'low' | 'high' = 'high'
 
 /**
  * Used only when the model omits the disclaimer or returns it blank.
@@ -302,54 +313,60 @@ const USER_TURN_GUARD =
   'and reply with the JSON object they describe.'
 
 /**
- * Asking the provider for JSON directly, with a declared shape.
+ * Asking the provider for JSON directly, with a declared shape, in OpenAI's
+ * strict structured-output mode.
  *
- * This is the first line of defence for structured output — it makes fenced or
- * prose-wrapped responses much less likely rather than impossible. The parser
- * below still assumes nothing about the response's form, because "much less
- * likely" is not a guarantee and this field feeds safety-critical UI.
+ * This is the first line of defence for structured output — strict mode makes
+ * fenced or prose-wrapped responses, and responses with the wrong field types,
+ * far less likely than plain JSON mode. The parser below still assumes nothing
+ * about the response's form, because "far less likely" is not a guarantee and
+ * this field feeds safety-critical UI.
  *
- * `recipe` is absent from `required`: packaged products have no recipe, and
- * forcing the field would push the model to invent one.
+ * Strict mode requires every property to be listed in `required` and
+ * `additionalProperties: false` at every object level — there is no notion of
+ * an optional key. `recipe` is made nullable instead (`type: ['array',
+ * 'null']`): the model returns `null` for packaged products, bottled drinks,
+ * and anything else with no recipe, rather than omitting the key.
+ * `parseAnalysis` already treats a `null` recipe and an absent one identically.
  */
-const RESPONSE_SCHEMA: ResponseSchema = {
-  type: SchemaType.OBJECT,
+const RESPONSE_SCHEMA = {
+  type: 'object',
   properties: {
     identified: {
-      type: SchemaType.BOOLEAN,
+      type: 'boolean',
       description: 'False when the image is unreadable, ambiguous, or not food.',
     },
     name: {
-      type: SchemaType.STRING,
+      type: 'string',
       description: 'Dish or product name in its local form. Empty string when not identified.',
     },
     description: {
-      type: SchemaType.STRING,
+      type: 'string',
       description:
         'One to three plain sentences about the food, or the reason it could not be identified.',
     },
     ingredients: {
-      type: SchemaType.ARRAY,
-      items: { type: SchemaType.STRING },
+      type: 'array',
+      items: { type: 'string' },
       description: 'Likely ingredients, most significant first.',
     },
     recipe: {
-      type: SchemaType.ARRAY,
-      items: { type: SchemaType.STRING },
+      type: ['array', 'null'],
+      items: { type: 'string' },
       description:
-        'Complete imperative sentences read aloud by text-to-speech. Empty when there is no recipe.',
+        'Complete imperative sentences read aloud by text-to-speech. Null when there is no recipe.',
     },
     allergens: {
-      type: SchemaType.ARRAY,
-      items: { type: SchemaType.STRING },
+      type: 'array',
+      items: { type: 'string' },
       description: 'Allergens and dietary flags, each stating how certain it is.',
     },
     culturalContext: {
-      type: SchemaType.STRING,
+      type: 'string',
       description: 'Origin and how the food is eaten, with Finnish context where it applies.',
     },
     disclaimer: {
-      type: SchemaType.STRING,
+      type: 'string',
       description: 'Reminder that this is AI-generated and does not replace the official label.',
     },
   },
@@ -358,11 +375,13 @@ const RESPONSE_SCHEMA: ResponseSchema = {
     'name',
     'description',
     'ingredients',
+    'recipe',
     'allergens',
     'culturalContext',
     'disclaimer',
   ],
-}
+  additionalProperties: false,
+} as const
 
 /**
  * Built on first use rather than at import time.
@@ -372,33 +391,24 @@ const RESPONSE_SCHEMA: ResponseSchema = {
  * absent — which would take the test suite and the typecheck-adjacent tooling
  * down with it.
  */
-let cachedModel: GenerativeModel | undefined
+let cachedClient: OpenAI | undefined
 
-function getModel(): GenerativeModel {
-  if (cachedModel) return cachedModel
+function getClient(): OpenAI {
+  if (cachedClient) return cachedClient
 
-  const apiKey = process.env.GEMINI_API_KEY?.trim()
+  const apiKey = process.env.OPENAI_API_KEY?.trim()
   if (!apiKey) {
     // Loud and specific, server-side. No fallback, no degraded mode: silently
     // continuing without a provider would mean shipping made-up food safety
     // information. The message names the fix and never the value.
     throw new Error(
-      'GEMINI_API_KEY is not set. Copy backend/.env.example to backend/.env and set the key.',
+      'OPENAI_API_KEY is not set. Copy backend/.env.example to backend/.env and set the key.',
     )
   }
 
-  cachedModel = new GoogleGenerativeAI(apiKey).getGenerativeModel({
-    model: MODEL_NAME,
-    systemInstruction: SYSTEM_PROMPT,
-    generationConfig: {
-      temperature: TEMPERATURE,
-      maxOutputTokens: MAX_OUTPUT_TOKENS,
-      responseMimeType: 'application/json',
-      responseSchema: RESPONSE_SCHEMA,
-    },
-  })
+  cachedClient = new OpenAI({ apiKey })
 
-  return cachedModel
+  return cachedClient
 }
 
 /** Error message from an unknown throwable, without assuming it is an Error. */
@@ -573,19 +583,32 @@ export function parseAnalysis(rawText: string): AiAnalysis {
  * @throws When the provider call fails or its output cannot be parsed.
  */
 export async function analyzeImage(imageBase64: string, mimeType: string): Promise<AiAnalysis> {
-  const model = getModel()
+  const client = getClient()
 
-  let result: Awaited<ReturnType<GenerativeModel['generateContent']>>
+  let completion: OpenAI.Chat.Completions.ChatCompletion
   try {
-    result = await model.generateContent(
+    completion = await client.chat.completions.create(
       {
-        contents: [
+        model: MODEL_NAME,
+        max_completion_tokens: MAX_OUTPUT_TOKENS,
+        response_format: {
+          type: 'json_schema',
+          json_schema: { name: 'food_analysis', strict: true, schema: RESPONSE_SCHEMA },
+        },
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
           {
             role: 'user',
-            parts: [
-              { inlineData: { data: imageBase64, mimeType } },
+            content: [
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${mimeType};base64,${imageBase64}`,
+                  detail: IMAGE_DETAIL,
+                },
+              },
               // After the image on purpose — see USER_TURN_GUARD.
-              { text: USER_TURN_GUARD },
+              { type: 'text', text: USER_TURN_GUARD },
             ],
           },
         ],
@@ -595,33 +618,31 @@ export async function analyzeImage(imageBase64: string, mimeType: string): Promi
   } catch (error) {
     // Provider-level failure: quota exhausted, network, bad key, timeout. The
     // message describes the transport, never the image.
-    throw new Error(`Gemini request failed: ${describeError(error)}`)
+    throw new Error(`OpenAI request failed: ${describeError(error)}`)
   }
 
-  const { response } = result
-
-  const blockReason = response.promptFeedback?.blockReason
-  if (blockReason) {
-    throw new Error(`Gemini blocked the request (${blockReason})`)
+  const choice = completion.choices?.[0]
+  if (!choice) {
+    throw new Error('OpenAI returned no choices')
   }
 
-  const candidate = response.candidates?.[0]
-  if (!candidate) {
-    throw new Error('Gemini returned no candidates')
+  if (choice.finish_reason !== 'stop') {
+    // 'length' here usually means the model's internal reasoning, or a very
+    // long recipe/description, consumed the output budget — see
+    // MAX_OUTPUT_TOKENS. 'content_filter' means the provider's own safety
+    // filter withheld the output.
+    throw new Error(`OpenAI stopped early (${choice.finish_reason})`)
   }
 
-  if (candidate.finishReason && candidate.finishReason !== FinishReason.STOP) {
-    // MAX_TOKENS here usually means the model's internal reasoning consumed the
-    // output budget before it wrote any JSON — see MAX_OUTPUT_TOKENS.
-    throw new Error(`Gemini stopped early (${candidate.finishReason})`)
+  if (choice.message.refusal) {
+    // The refusal explanation is model output derived from the image; never
+    // put it in a thrown message.
+    throw new Error('OpenAI refused the request')
   }
 
-  let text: string
-  try {
-    // Throws rather than returns when the candidate was filtered.
-    text = response.text()
-  } catch (error) {
-    throw new Error(`Gemini returned no usable text: ${describeError(error)}`)
+  const text = choice.message.content
+  if (typeof text !== 'string' || text.trim().length === 0) {
+    throw new Error('OpenAI returned no usable text')
   }
 
   return parseAnalysis(text)

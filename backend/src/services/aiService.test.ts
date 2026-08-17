@@ -2,29 +2,28 @@
  * Tests for the AI service layer.
  *
  * `parseAnalysis` is pure and exported specifically to be tested without
- * spending Gemini quota — see the OWNERSHIP note in aiService.ts. Most of
+ * spending OpenAI quota — see the OWNERSHIP note in aiService.ts. Most of
  * this file exercises it directly with hand-written fixtures standing in for
  * every way a model can misbehave: fenced JSON, prose wrapping, malformed
  * JSON, missing/wrong-typed fields, and an invented referenceImageUrl.
  *
- * `analyzeImage` is also covered, with the @google/generative-ai SDK fully
- * mocked — this file must never reach the real Gemini API.
+ * `analyzeImage` is also covered, with the `openai` SDK fully mocked — this
+ * file must never reach the real OpenAI API.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { generateContentMock } = vi.hoisted(() => ({
-  generateContentMock: vi.fn(),
+const { createMock } = vi.hoisted(() => ({
+  createMock: vi.fn(),
 }))
 
-vi.mock('@google/generative-ai', () => ({
+vi.mock('openai', () => {
   // A plain function, not an arrow function: aiService.ts calls this with
   // `new`, and arrow functions cannot be constructors.
-  GoogleGenerativeAI: vi.fn().mockImplementation(function GoogleGenerativeAI() {
-    return { getGenerativeModel: () => ({ generateContent: generateContentMock }) }
-  }),
-  FinishReason: { STOP: 'STOP', MAX_TOKENS: 'MAX_TOKENS', SAFETY: 'SAFETY' },
-  SchemaType: { OBJECT: 'OBJECT', STRING: 'STRING', ARRAY: 'ARRAY', BOOLEAN: 'BOOLEAN' },
-}))
+  const OpenAI = vi.fn().mockImplementation(function OpenAI() {
+    return { chat: { completions: { create: createMock } } }
+  })
+  return { default: OpenAI, OpenAI }
+})
 
 const VALID_PAYLOAD = {
   identified: true,
@@ -243,87 +242,86 @@ describe('parseAnalysis', () => {
 describe('analyzeImage', () => {
   beforeEach(() => {
     vi.resetModules()
-    generateContentMock.mockReset()
-    process.env.GEMINI_API_KEY = 'test-key'
+    createMock.mockReset()
+    process.env.OPENAI_API_KEY = 'test-key'
   })
 
-  function candidateWith(overrides: Record<string, unknown> = {}) {
+  function choiceWith(overrides: Record<string, unknown> = {}) {
     return {
-      response: {
-        promptFeedback: undefined,
-        candidates: [{ finishReason: 'STOP', ...overrides }],
-        text: () => JSON.stringify(VALID_PAYLOAD),
-      },
+      choices: [
+        {
+          finish_reason: 'stop',
+          message: { content: JSON.stringify(VALID_PAYLOAD), refusal: null },
+          ...overrides,
+        },
+      ],
     }
   }
 
-  it('throws a descriptive error when GEMINI_API_KEY is not set', async () => {
-    delete process.env.GEMINI_API_KEY
+  it('throws a descriptive error when OPENAI_API_KEY is not set', async () => {
+    delete process.env.OPENAI_API_KEY
     const { analyzeImage } = await import('./aiService')
-    await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/GEMINI_API_KEY/)
+    await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/OPENAI_API_KEY/)
   })
 
   it('returns a parsed analysis on a normal successful call', async () => {
-    generateContentMock.mockResolvedValue(candidateWith())
+    createMock.mockResolvedValue(choiceWith())
     const { analyzeImage } = await import('./aiService')
     const result = await analyzeImage('base64==', 'image/jpeg')
     expect(result.name).toBe('Karjalanpiirakka')
   })
 
   it('wraps a provider-level failure (network, timeout, quota) in a generic transport error', async () => {
-    generateContentMock.mockRejectedValue(new Error('ECONNRESET'))
+    createMock.mockRejectedValue(new Error('ECONNRESET'))
     const { analyzeImage } = await import('./aiService')
-    await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/Gemini request failed/)
+    await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/OpenAI request failed/)
   })
 
-  it('throws when the prompt was blocked', async () => {
-    generateContentMock.mockResolvedValue({
-      response: {
-        promptFeedback: { blockReason: 'SAFETY' },
-        candidates: [],
-        text: () => '',
-      },
-    })
-    const { analyzeImage } = await import('./aiService')
-    await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/blocked/)
-  })
-
-  it('throws when there are no candidates', async () => {
-    generateContentMock.mockResolvedValue({
-      response: { promptFeedback: undefined, candidates: [], text: () => '' },
-    })
-    const { analyzeImage } = await import('./aiService')
-    await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/no candidates/)
-  })
-
-  it('throws when the model stops early (e.g. MAX_TOKENS from a long thinking response)', async () => {
-    generateContentMock.mockResolvedValue(candidateWith({ finishReason: 'MAX_TOKENS' }))
+  it('throws when the response was withheld by the content filter', async () => {
+    createMock.mockResolvedValue(
+      choiceWith({ finish_reason: 'content_filter', message: { content: null, refusal: null } }),
+    )
     const { analyzeImage } = await import('./aiService')
     await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/stopped early/)
   })
 
-  it('throws a clean error when response.text() throws (filtered candidate)', async () => {
-    generateContentMock.mockResolvedValue({
-      response: {
-        promptFeedback: undefined,
-        candidates: [{ finishReason: 'STOP' }],
-        text: () => {
-          throw new Error('candidate was filtered')
-        },
-      },
-    })
+  it('throws when there are no choices', async () => {
+    createMock.mockResolvedValue({ choices: [] })
+    const { analyzeImage } = await import('./aiService')
+    await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/no choices/)
+  })
+
+  it('throws when the model stops early (e.g. length from a long thinking response)', async () => {
+    createMock.mockResolvedValue(
+      choiceWith({ finish_reason: 'length', message: { content: null, refusal: null } }),
+    )
+    const { analyzeImage } = await import('./aiService')
+    await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/stopped early/)
+  })
+
+  it('throws a clean error, without echoing the refusal text, when the model refuses', async () => {
+    createMock.mockResolvedValue(
+      choiceWith({
+        message: { content: null, refusal: 'I cannot help with that image.' },
+      }),
+    )
+    const { analyzeImage } = await import('./aiService')
+    await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/refused/i)
+    await expect(analyzeImage('base64==', 'image/jpeg')).rejects.not.toThrow(
+      /cannot help with that image/i,
+    )
+  })
+
+  it('throws when the message has neither usable content nor a refusal', async () => {
+    createMock.mockResolvedValue(choiceWith({ message: { content: null, refusal: null } }))
     const { analyzeImage } = await import('./aiService')
     await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/no usable text/)
   })
 
   it('propagates a parseAnalysis failure when the model text is not valid JSON', async () => {
-    generateContentMock.mockResolvedValue({
-      response: {
-        promptFeedback: undefined,
-        candidates: [{ finishReason: 'STOP' }],
-        text: () => 'Sorry, I cannot help with that.',
-      },
-    })
+    createMock.mockResolvedValue(
+      choiceWith({ message: { content: 'Sorry, I cannot help with that.', refusal: null } }),
+    )
     const { analyzeImage } = await import('./aiService')
     await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/not valid json/i)
   })

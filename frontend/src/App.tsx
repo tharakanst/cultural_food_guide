@@ -361,13 +361,13 @@ export function App() {
           Transparency about the onward transfer, not just our own handling.
           The previous wording said only "sent to our server", which a reader
           would reasonably take to mean the photo stops there. It does not — it
-          is forwarded to Google's Gemini API for analysis. Naming the third
+          is forwarded to OpenAI for analysis. Naming the third
           party is the honest disclosure; describing our server alone is not.
         */}
         <p>
-          Your photo is sent to our server and then to Google&rsquo;s Gemini AI service, which
-          analyses it and generates the result. Photos are not stored by us and are discarded once
-          the result is returned. No account, no location, no tracking.
+          Your photo is sent to our server and then to OpenAI, which analyses it and generates the
+          result. Photos are not stored by us and are discarded once the result is returned. No
+          account, no location, no tracking.
         </p>
         <p>
           Results are AI-generated and can be wrong. Always check official packaging or ask staff

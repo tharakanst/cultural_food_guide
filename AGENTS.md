@@ -27,7 +27,7 @@ that must work for everyone at the git or npm layer, not in tool-specific config
 | Frontend | React 19 + Vite + TypeScript, plain CSS with custom properties |
 | Mobile | PWA — installable, responsive, uses the device camera |
 | Backend | Node + Express + TypeScript |
-| AI | Google Gemini Flash (free tier), multimodal — OCR and identification in one call |
+| AI | OpenAI `gpt-5.6-luna`, multimodal — OCR and identification in one call. Billed per token |
 | Reference images | Wikimedia Commons API (no key required) |
 | Testing | Vitest, React Testing Library, Supertest |
 
@@ -42,7 +42,7 @@ routes/analyze.ts         API layer — validation, HTTP concerns
       ↓
 services/aiService.ts     service layer — AI call, prompt, response parsing
       ↓
-Gemini API                external
+OpenAI API               external
 ```
 
 The reason this matters in practice: the AI provider is isolated in the service
@@ -55,7 +55,7 @@ These are not style preferences. Breaking them breaks the project's stated
 commitments in the project plan.
 
 1. **The AI API key never reaches the client.** It lives in `backend/.env` and is
-   read only by the service layer. The frontend calls our backend, never Gemini
+   read only by the service layer. The frontend calls our backend, never OpenAI
    directly. Do not "simplify" by moving the call into React.
 2. **No personal data is collected or stored.** No location, no identifiers, no
    accounts, no persistence of uploaded images. The project plan commits to this.
@@ -138,7 +138,7 @@ below the YAML frontmatter is a system prompt.
 
 | Agent | Use for |
 |---|---|
-| `llm-integration` | Prompt tuning, output reliability, the Gemini call |
+| `llm-integration` | Prompt tuning, output reliability, the OpenAI call |
 | `accessibility-reviewer` | WCAG review — contrast, alt text, keyboard, screen reader, TTS |
 | `test-designer` | Test cases and blind-spot analysis |
 | `doc-generator` | Technical documentation generated from code |
