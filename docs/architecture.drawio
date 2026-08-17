@@ -1,0 +1,126 @@
+<mxfile host="app.diagrams.net" modified="2026-08-17T00:00:00.000Z" agent="claude-code" version="24.0.0" type="device">
+  <diagram name="Architecture" id="cfg-architecture">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Cultural Food Guide — Architecture &amp; Data Origin (rough)" style="text;html=1;align=center;verticalAlign=middle;fontSize=20;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="0" width="900" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== USER / DATA ORIGIN #1 ===================== -->
+        <mxCell id="actorUser" value="User&#10;(visitor / exchange student)" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="400" y="45" width="120" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeUserCam" value="takes/selects a photo&#10;(stays on device until Analyze is tapped)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;" edge="1" parent="1" source="actorUser" target="layerPresentation">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== PRESENTATION LAYER ===================== -->
+        <mxCell id="layerPresentation" value="Presentation — React 19 + Vite + TypeScript (PWA)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fillColor=#f5f5f5;strokeColor=#666666;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="150" width="900" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="compCamera" value="CameraCapture.tsx&#10;(device camera / file upload)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="70" y="190" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="compResult" value="FoodResult.tsx&#10;(ingredients, allergens, cultural context, TTS)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="330" y="190" width="260" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="compRefImg" value="ReferenceImage.tsx&#10;(Wikimedia photo display)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="630" y="190" width="220" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- HTTP arrow presentation -> API -->
+        <mxCell id="edgeHttp" value="HTTP (JSON) POST /api/analyze&#10;body = base64 photo, nothing else" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=12;" edge="1" parent="1" source="layerPresentation" target="layerApi">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== API LAYER ===================== -->
+        <mxCell id="layerApi" value="API layer — Express (Node + TypeScript)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fillColor=#f5f5f5;strokeColor=#666666;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="330" width="900" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="compIndex" value="index.ts&#10;(bootstrap, helmet, CORS, JSON body limit)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="70" y="370" width="260" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="compRateLimit" value="middleware/rateLimit.ts&#10;(protects shared Gemini free-tier quota)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="360" y="370" width="260" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="compAnalyzeRoute" value="routes/analyze.ts&#10;(validation, status codes)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="650" y="370" width="200" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- function call arrow API -> Service -->
+        <mxCell id="edgeFn" value="plain function calls" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=12;" edge="1" parent="1" source="layerApi" target="layerService">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== SERVICE LAYER ===================== -->
+        <mxCell id="layerService" value="Service layer" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fillColor=#f5f5f5;strokeColor=#666666;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="510" width="900" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="compAiService" value="services/aiService.ts&#10;(prompt, Gemini call, response parsing)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="150" y="550" width="320" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="compImageService" value="services/imageService.ts&#10;(Wikimedia reference image lookup)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="530" y="550" width="320" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== EXTERNAL LAYER / DATA SOURCES ===================== -->
+        <mxCell id="extGemini" value="Gemini Flash API&#10;DATA SOURCE: AI-generated ingredients,&#10;allergens &amp; cultural context — inferred from&#10;the photo, not fact-checked against a source" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="150" y="700" width="320" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="extWikimedia" value="Wikimedia Commons API&#10;DATA SOURCE: third-party reference photo,&#10;matched by dish name (may be wrong or absent,&#10;no key required)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="530" y="700" width="320" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="edgeAiExt" value="photo + prompt →&#10;← identification, ingredients, allergens, context" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;" edge="1" parent="1" source="compAiService" target="extGemini">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeImgExt" value="dish name →&#10;← matching photo URL" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;" edge="1" parent="1" source="compImageService" target="extWikimedia">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== NO-PERSISTENCE NOTE ===================== -->
+        <mxCell id="noteNoPersistence" value="No database anywhere in this system. The uploaded photo is held in memory for the duration of one request and discarded once the response is sent. No accounts, location, or identifiers are collected — every field in the result is either (a) generated fresh by Gemini from that one photo, or (b) fetched live from Wikimedia. Nothing about a user or their photo outlives the request." style="shape=note;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=10;fillColor=#fff2cc;strokeColor=#d6b656;size=16;" vertex="1" parent="1">
+          <mxGeometry x="150" y="810" width="700" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== SHARED TYPES ===================== -->
+        <mxCell id="compSharedTypes" value="shared/types.ts&#10;(AnalyzeRequest, AnalyzeResponse, ApiError —&#10;imported by both sides, no runtime values)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="960" y="330" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeSharedFront" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;endArrow=none;startArrow=none;" edge="1" parent="1" source="compSharedTypes" target="layerPresentation">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeSharedApi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;endArrow=none;startArrow=none;" edge="1" parent="1" source="compSharedTypes" target="layerApi">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== NEWLY ADDED: ON-DEVICE-ONLY FLOWS (teal) =====================
+             Missing from the original diagram: both are real data flows verified in code
+             (frontend/vite.config.ts, FoodResult.tsx) that never leave the browser. -->
+        <mxCell id="compServiceWorker" value="Service Worker — Workbox&#10;(vite-plugin-pwa, registerType: autoUpdate)&#10;precaches the app shell (JS/CSS/HTML/icons) into&#10;Cache Storage. /api/* is denylisted — an analyze&#10;response must never be served from cache." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d0e0e3;strokeColor=#76a5af;" vertex="1" parent="1">
+          <mxGeometry x="960" y="150" width="220" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeSW" value="install → precache shell&#10;(no photos, no responses)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;" edge="1" parent="1" source="layerPresentation" target="compServiceWorker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="compWebSpeech" value="Web Speech API&#10;(browser built-in, SpeechSynthesisUtterance)&#10;FoodResult.tsx reads recipe steps aloud.&#10;Entirely on-device — no network call, no&#10;text ever leaves the browser." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d0e0e3;strokeColor=#76a5af;" vertex="1" parent="1">
+          <mxGeometry x="960" y="440" width="220" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeSpeech" value="recipe/result text →&#10;← spoken audio" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;" edge="1" parent="1" source="compResult" target="compWebSpeech">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend" value="Solid arrow = data/call flow (with what travels each way)    Dashed line = shared type contract, no runtime coupling    Purple note = data lifecycle / privacy    Teal box = added: on-device only, never touches the network" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="150" y="900" width="1030" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

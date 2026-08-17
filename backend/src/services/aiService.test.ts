@@ -2,18 +2,21 @@
  * Tests for the AI service layer.
  *
  * `parseAnalysis` is pure and exported specifically to be tested without
- * spending OpenAI quota — see the OWNERSHIP note in aiService.ts. Most of
- * this file exercises it directly with hand-written fixtures standing in for
- * every way a model can misbehave: fenced JSON, prose wrapping, malformed
- * JSON, missing/wrong-typed fields, and an invented referenceImageUrl.
+ * spending quota on either provider — see the OWNERSHIP note in aiService.ts.
+ * Most of this file exercises it directly with hand-written fixtures standing
+ * in for every way a model can misbehave: fenced JSON, prose wrapping,
+ * malformed JSON, missing/wrong-typed fields, and an invented
+ * referenceImageUrl.
  *
- * `analyzeImage` is also covered, with the `openai` SDK fully mocked — this
- * file must never reach the real OpenAI API.
+ * `analyzeImage` is also covered for both providers, with the `openai` and
+ * `@google/generative-ai` packages fully mocked — this file must never reach
+ * either real API.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { createMock } = vi.hoisted(() => ({
+const { createMock, generateContentMock } = vi.hoisted(() => ({
   createMock: vi.fn(),
+  generateContentMock: vi.fn(),
 }))
 
 vi.mock('openai', () => {
@@ -25,6 +28,16 @@ vi.mock('openai', () => {
   return { default: OpenAI, OpenAI }
 })
 
+vi.mock('@google/generative-ai', () => ({
+  // A plain function, not an arrow function: aiService.ts calls this with
+  // `new`, and arrow functions cannot be constructors.
+  GoogleGenerativeAI: vi.fn().mockImplementation(function GoogleGenerativeAI() {
+    return { getGenerativeModel: () => ({ generateContent: generateContentMock }) }
+  }),
+  FinishReason: { STOP: 'STOP', MAX_TOKENS: 'MAX_TOKENS', SAFETY: 'SAFETY' },
+  SchemaType: { OBJECT: 'OBJECT', STRING: 'STRING', ARRAY: 'ARRAY', BOOLEAN: 'BOOLEAN' },
+}))
+
 const VALID_PAYLOAD = {
   identified: true,
   name: 'Karjalanpiirakka',
@@ -33,6 +46,18 @@ const VALID_PAYLOAD = {
   allergens: ['Likely contains gluten — typical for this dish'],
   culturalContext: 'A traditional Finnish pastry from Karelia.',
   disclaimer: 'AI-generated, may be wrong.',
+}
+
+/**
+ * Every env var this file touches, reset after each test so a provider
+ * choice or key made for one test can never leak into the next — the same
+ * discipline `resolveProvider` in aiService.ts relies on for reading
+ * `AI_PROVIDER` fresh rather than cached at import time.
+ */
+function resetProviderEnv() {
+  delete process.env.AI_PROVIDER
+  delete process.env.OPENAI_API_KEY
+  delete process.env.GEMINI_API_KEY
 }
 
 describe('parseAnalysis', () => {
@@ -160,7 +185,9 @@ describe('parseAnalysis', () => {
 
   it('demotes a claimed identification with a whitespace-only name to identified: false', async () => {
     const parseAnalysis = await importParseAnalysis()
-    const result = parseAnalysis(JSON.stringify({ ...VALID_PAYLOAD, identified: true, name: '   ' }))
+    const result = parseAnalysis(
+      JSON.stringify({ ...VALID_PAYLOAD, identified: true, name: '   ' }),
+    )
     expect(result.identified).toBe(false)
   })
 
@@ -185,7 +212,10 @@ describe('parseAnalysis', () => {
   it('keeps a populated recipe and drops blank steps', async () => {
     const parseAnalysis = await importParseAnalysis()
     const result = parseAnalysis(
-      JSON.stringify({ ...VALID_PAYLOAD, recipe: ['Preheat the oven.', '   ', 'Bake for 20 minutes.'] }),
+      JSON.stringify({
+        ...VALID_PAYLOAD,
+        recipe: ['Preheat the oven.', '   ', 'Bake for 20 minutes.'],
+      }),
     )
     expect(result.recipe).toEqual(['Preheat the oven.', 'Bake for 20 minutes.'])
   })
@@ -207,7 +237,10 @@ describe('parseAnalysis', () => {
   it('strips a model-invented referenceImageUrl instead of passing it through', async () => {
     const parseAnalysis = await importParseAnalysis()
     const result = parseAnalysis(
-      JSON.stringify({ ...VALID_PAYLOAD, referenceImageUrl: 'https://attacker.example/pwned.jpg' }),
+      JSON.stringify({
+        ...VALID_PAYLOAD,
+        referenceImageUrl: 'https://attacker.example/pwned.jpg',
+      }),
     )
     expect(result).not.toHaveProperty('referenceImageUrl')
   })
@@ -239,11 +272,19 @@ describe('parseAnalysis', () => {
   })
 })
 
-describe('analyzeImage', () => {
+describe('analyzeImage — OpenAI provider (the default)', () => {
   beforeEach(() => {
     vi.resetModules()
     createMock.mockReset()
+    generateContentMock.mockReset()
+    resetProviderEnv()
+    // AI_PROVIDER deliberately left unset: this whole block exercises the
+    // default-to-OpenAI path so the pre-migration test behaviour is preserved.
     process.env.OPENAI_API_KEY = 'test-key'
+  })
+
+  afterEach(() => {
+    resetProviderEnv()
   })
 
   function choiceWith(overrides: Record<string, unknown> = {}) {
@@ -324,5 +365,192 @@ describe('analyzeImage', () => {
     )
     const { analyzeImage } = await import('./aiService')
     await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/not valid json/i)
+  })
+
+  it('never constructs the Gemini client when the OpenAI path is used', async () => {
+    createMock.mockResolvedValue(choiceWith())
+    const { analyzeImage } = await import('./aiService')
+    await analyzeImage('base64==', 'image/jpeg')
+    expect(generateContentMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('analyzeImage — Gemini provider (AI_PROVIDER=gemini)', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    createMock.mockReset()
+    generateContentMock.mockReset()
+    resetProviderEnv()
+    process.env.AI_PROVIDER = 'gemini'
+    process.env.GEMINI_API_KEY = 'test-key'
+  })
+
+  afterEach(() => {
+    resetProviderEnv()
+  })
+
+  function candidateWith(overrides: Record<string, unknown> = {}) {
+    return {
+      response: {
+        promptFeedback: undefined,
+        candidates: [{ finishReason: 'STOP', ...overrides }],
+        text: () => JSON.stringify(VALID_PAYLOAD),
+      },
+    }
+  }
+
+  it('throws a descriptive error when GEMINI_API_KEY is not set', async () => {
+    delete process.env.GEMINI_API_KEY
+    const { analyzeImage } = await import('./aiService')
+    await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/GEMINI_API_KEY/)
+  })
+
+  it('returns a parsed analysis on a normal successful call', async () => {
+    generateContentMock.mockResolvedValue(candidateWith())
+    const { analyzeImage } = await import('./aiService')
+    const result = await analyzeImage('base64==', 'image/jpeg')
+    expect(result.name).toBe('Karjalanpiirakka')
+  })
+
+  it('is selected case-insensitively and with surrounding whitespace', async () => {
+    process.env.AI_PROVIDER = '  GEMINI  '
+    generateContentMock.mockResolvedValue(candidateWith())
+    const { analyzeImage } = await import('./aiService')
+    const result = await analyzeImage('base64==', 'image/jpeg')
+    expect(result.name).toBe('Karjalanpiirakka')
+    expect(createMock).not.toHaveBeenCalled()
+  })
+
+  it('wraps a provider-level failure (network, timeout, quota) in a generic transport error', async () => {
+    generateContentMock.mockRejectedValue(new Error('ECONNRESET'))
+    const { analyzeImage } = await import('./aiService')
+    await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/Gemini request failed/)
+  })
+
+  it('throws when the prompt was blocked', async () => {
+    generateContentMock.mockResolvedValue({
+      response: {
+        promptFeedback: { blockReason: 'SAFETY' },
+        candidates: [],
+        text: () => '',
+      },
+    })
+    const { analyzeImage } = await import('./aiService')
+    await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/blocked/)
+  })
+
+  it('throws when there are no candidates', async () => {
+    generateContentMock.mockResolvedValue({
+      response: { promptFeedback: undefined, candidates: [], text: () => '' },
+    })
+    const { analyzeImage } = await import('./aiService')
+    await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/no candidates/)
+  })
+
+  it('throws when the model stops early (e.g. MAX_TOKENS from a long thinking response)', async () => {
+    generateContentMock.mockResolvedValue(candidateWith({ finishReason: 'MAX_TOKENS' }))
+    const { analyzeImage } = await import('./aiService')
+    await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/stopped early/)
+  })
+
+  it('throws a clean error when response.text() throws (filtered candidate)', async () => {
+    generateContentMock.mockResolvedValue({
+      response: {
+        promptFeedback: undefined,
+        candidates: [{ finishReason: 'STOP' }],
+        text: () => {
+          throw new Error('candidate was filtered')
+        },
+      },
+    })
+    const { analyzeImage } = await import('./aiService')
+    await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/no usable text/)
+  })
+
+  it('propagates a parseAnalysis failure when the model text is not valid JSON', async () => {
+    generateContentMock.mockResolvedValue({
+      response: {
+        promptFeedback: undefined,
+        candidates: [{ finishReason: 'STOP' }],
+        text: () => 'Sorry, I cannot help with that.',
+      },
+    })
+    const { analyzeImage } = await import('./aiService')
+    await expect(analyzeImage('base64==', 'image/jpeg')).rejects.toThrow(/not valid json/i)
+  })
+
+  it('never constructs the OpenAI client when the Gemini path is used', async () => {
+    generateContentMock.mockResolvedValue(candidateWith())
+    const { analyzeImage } = await import('./aiService')
+    await analyzeImage('base64==', 'image/jpeg')
+    expect(createMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('provider dispatch', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    createMock.mockReset()
+    generateContentMock.mockReset()
+    resetProviderEnv()
+    process.env.OPENAI_API_KEY = 'test-key'
+    process.env.GEMINI_API_KEY = 'test-key'
+  })
+
+  afterEach(() => {
+    resetProviderEnv()
+  })
+
+  it('defaults to OpenAI when AI_PROVIDER is unset', async () => {
+    delete process.env.AI_PROVIDER
+    createMock.mockResolvedValue({
+      choices: [
+        { finish_reason: 'stop', message: { content: JSON.stringify(VALID_PAYLOAD), refusal: null } },
+      ],
+    })
+    const { analyzeImage } = await import('./aiService')
+    await analyzeImage('base64==', 'image/jpeg')
+    expect(createMock).toHaveBeenCalledTimes(1)
+    expect(generateContentMock).not.toHaveBeenCalled()
+  })
+
+  it('defaults to OpenAI when AI_PROVIDER has an unrecognized value', async () => {
+    process.env.AI_PROVIDER = 'anthropic'
+    createMock.mockResolvedValue({
+      choices: [
+        { finish_reason: 'stop', message: { content: JSON.stringify(VALID_PAYLOAD), refusal: null } },
+      ],
+    })
+    const { analyzeImage } = await import('./aiService')
+    await analyzeImage('base64==', 'image/jpeg')
+    expect(createMock).toHaveBeenCalledTimes(1)
+    expect(generateContentMock).not.toHaveBeenCalled()
+  })
+
+  it('reads AI_PROVIDER fresh on each call rather than caching the choice at import time', async () => {
+    createMock.mockResolvedValue({
+      choices: [
+        { finish_reason: 'stop', message: { content: JSON.stringify(VALID_PAYLOAD), refusal: null } },
+      ],
+    })
+    generateContentMock.mockResolvedValue({
+      response: {
+        promptFeedback: undefined,
+        candidates: [{ finishReason: 'STOP' }],
+        text: () => JSON.stringify(VALID_PAYLOAD),
+      },
+    })
+
+    const { analyzeImage } = await import('./aiService')
+
+    delete process.env.AI_PROVIDER
+    await analyzeImage('base64==', 'image/jpeg')
+    expect(createMock).toHaveBeenCalledTimes(1)
+    expect(generateContentMock).not.toHaveBeenCalled()
+
+    process.env.AI_PROVIDER = 'gemini'
+    await analyzeImage('base64==', 'image/jpeg')
+    expect(generateContentMock).toHaveBeenCalledTimes(1)
+    expect(createMock).toHaveBeenCalledTimes(1)
   })
 })
