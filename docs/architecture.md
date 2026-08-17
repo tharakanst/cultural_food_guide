@@ -26,7 +26,7 @@ layer only communicates with the one below it.
 └─────────┬───────────────────┬───────────┘
           │                   │
 ┌─────────▼────────┐ ┌────────▼───────────┐
-│  Gemini API      │ │ Wikimedia Commons  │
+│  OpenAI API      │ │ Wikimedia Commons  │
 └──────────────────┘ └────────────────────┘
 ```
 
@@ -39,9 +39,13 @@ boundary that would justify separate deployments.
 Layered, because the separation earns its keep immediately rather than
 theoretically:
 
-- **Provider independence.** The AI call exists only in `aiService`. When the
-  project switched from Claude to Gemini during planning, that was a one-file
-  change. Any future switch is the same.
+- **Provider independence.** The AI call exists only in `aiService`. This has now
+  been exercised twice: once from Claude to Gemini during planning, and again
+  from Gemini to OpenAI at the end of the project. The second switch touched the
+  service file and its tests; the route layer, the frontend, and the API contract
+  in `shared/types.ts` needed no changes at all. That is the layering paying for
+  itself in the only way that counts — a provider change that did not become an
+  application change.
 - **Secret containment.** Only the service layer reads the API key. Because the
   presentation layer is physically separated by an HTTP boundary, there is no
   path by which a key can reach the browser bundle by accident.
@@ -80,14 +84,14 @@ than a single server-rendered app. Two consequences:
 
 ## Quality attributes
 
-| Attribute | How it is addressed |
-|---|---|
-| **Security** | API key server-side only; input validation; rate limiting; helmet headers; restricted CORS; generic client errors |
-| **Privacy** | No data persistence, no accounts, no location, no identifiers. Images are processed in memory and discarded |
-| **Accessibility** | WCAG AA contrast, alt text, keyboard operability, screen-reader announcements, text-to-speech. Enforced by a dedicated review agent |
-| **Maintainability** | Layer boundaries documented and enforced by per-directory instruction files that all AI tools read |
-| **Reliability** | Model output parsing tolerates malformed responses; camera failure falls back to file upload |
-| **Cost** | Gemini free tier (1,500 requests/day), rate-limited to prevent quota exhaustion |
+| Attribute           | How it is addressed                                                                                                                 |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **Security**        | API key server-side only; input validation; rate limiting; helmet headers; restricted CORS; generic client errors                   |
+| **Privacy**         | No data persistence, no accounts, no location, no identifiers. Images are processed in memory and discarded                         |
+| **Accessibility**   | WCAG AA contrast, alt text, keyboard operability, screen-reader announcements, text-to-speech. Enforced by a dedicated review agent |
+| **Maintainability** | Layer boundaries documented and enforced by per-directory instruction files that all AI tools read                                  |
+| **Reliability**     | Model output parsing tolerates malformed responses; camera failure falls back to file upload                                        |
+| **Cost**            | OpenAI billed per token (~$0.0006 per analysis). Rate limiting caps worst-case daily spend rather than protecting a quota           |
 
 Scalability is deliberately not optimised for. The system serves a demo and a
 small number of concurrent users; designing for load would be speculative.
@@ -99,7 +103,7 @@ Security is cross-cutting rather than a layer. What applies here:
 - Secrets in environment variables, never committed; a git hook scans staged
   files for key patterns before every commit
 - Input validation and payload size caps before any provider call
-- Rate limiting on `/api/*`, protecting a shared free-tier quota
+- Rate limiting on `/api/*`, bounding spend on a shared billed account
 - Model output treated as untrusted — never rendered as HTML
 - Prompt injection acknowledged as a real vector: the input is a photograph of
   arbitrary real-world text
@@ -115,11 +119,11 @@ constraint is that the team uses three different AI tools — Claude Code (×2),
 Codex (×1), ChatGPT web (×1) — so the toolkit is split by what can actually be
 shared.
 
-| Mechanism | Location | Works for |
-|---|---|---|
+| Mechanism       | Location                                               | Works for                                                    |
+| --------------- | ------------------------------------------------------ | ------------------------------------------------------------ |
 | Project context | `AGENTS.md`, `backend/AGENTS.md`, `frontend/AGENTS.md` | All tools — Codex natively, Claude via pointer, web by paste |
-| Guarantees | `.githooks/pre-commit`, npm scripts | All members, any tool, any OS |
-| Conveniences | `.claude/` agents, commands, hooks | Claude Code; content readable and pasteable by others |
+| Guarantees      | `.githooks/pre-commit`, npm scripts                    | All members, any tool, any OS                                |
+| Conveniences    | `.claude/` agents, commands, hooks                     | Claude Code; content readable and pasteable by others        |
 
 **The rule applied:** anything that must not be forgotten lives at the git or npm
 layer, where it runs regardless of tool. Only conveniences live in tool-specific
@@ -135,14 +139,14 @@ Six specialist agents, chosen from a longer candidate list. An agent earns its o
 definition only if context isolation genuinely helps, the work recurs, and it
 applies a lens a general-purpose agent would miss.
 
-| Agent | Justification |
-|---|---|
-| `llm-integration` | Prompt tuning is a high-volume try-check-adjust loop whose intermediate output is noise |
-| `accessibility-reviewer` | WCAG failures are invisible to general review because the code still runs correctly |
-| `test-designer` | Whoever wrote the code shares its blind spots; a fresh context is better placed to ask what breaks it |
-| `doc-generator` | High read-to-write ratio — traverses many files to emit a short artifact |
-| `frontend-expert` | React implementation, scoped to building rather than reviewing |
-| `backend-expert` | Express and service implementation, scoped to building rather than reviewing |
+| Agent                    | Justification                                                                                         |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `llm-integration`        | Prompt tuning is a high-volume try-check-adjust loop whose intermediate output is noise               |
+| `accessibility-reviewer` | WCAG failures are invisible to general review because the code still runs correctly                   |
+| `test-designer`          | Whoever wrote the code shares its blind spots; a fresh context is better placed to ask what breaks it |
+| `doc-generator`          | High read-to-write ratio — traverses many files to emit a short artifact                              |
+| `frontend-expert`        | React implementation, scoped to building rather than reviewing                                        |
+| `backend-expert`         | Express and service implementation, scoped to building rather than reviewing                          |
 
 Implementation agents build; review agents assess. The separation is deliberate:
 reviewing your own work reproduces its blind spots.
@@ -155,10 +159,14 @@ remember to summon).
 
 ## Known limitations
 
-- Free-tier rate limits (15 requests/minute) could throttle a live demo if
-  several people use it simultaneously
-- Gemini Flash is less capable than frontier models at nuanced cultural
-  reasoning; accuracy of cultural claims is not verified against a source
+- API usage is billed per token, so the rate limiter now exists to bound spend
+  rather than to preserve a free quota. Worst case with four developers is around
+  $0.24/day
+- `gpt-5.6-luna` was chosen as the cheapest tier supporting both vision and
+  strict structured output. It is less capable than frontier models at nuanced
+  cultural reasoning, and whether it reads small Finnish label text as accurately
+  as the previous provider has not been measured against real photographs
+- Accuracy of cultural claims is not verified against any source
 - Wikimedia reference images are matched by dish name and may occasionally be
   wrong or absent
 - No offline capability beyond the PWA shell — analysis requires connectivity

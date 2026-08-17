@@ -3,29 +3,25 @@
  *
  * WHY THE NUMBERS ARE WHAT THEY ARE
  *
- * Every /api/analyze request spends from the Gemini free tier, which is shared
- * by the whole team:
+ * Every /api/analyze request costs money. The provider is OpenAI, billed per
+ * token on a single account shared by the whole team — there is no free tier
+ * absorbing mistakes. One analysis is roughly $0.0006 (about 2,300 input tokens
+ * for a 1600px photo, plus output), so the risk is not one expensive request but
+ * an unattended loop making thousands of cheap ones.
  *
- *   - 15 requests per minute  (burst ceiling)
- *   - 1,500 requests per day  (daily ceiling)
- *
- * Both ceilings are per *project key*, not per person. Four teammates develop
- * against the same key, so one runaway loop in someone's dev tab can exhaust
- * the day's quota for everyone — including during the demo. Two limiters, one
- * per ceiling:
+ * That changes what these limits are for. They previously protected a quota that
+ * would simply run out; they now protect a bill that will not. Two limiters:
  *
  * BURST — 5 requests per minute per IP.
- *   The provider allows 15/min in total. Capping a single client at 5 means
- *   three clients can be active simultaneously without any of them being the
- *   reason we hit the provider's limit. A human photographing food does not
- *   exceed 5 requests a minute; a broken retry loop does immediately, which is
- *   exactly the case this is here to stop.
+ *   A human photographing food does not exceed 5 requests a minute; a broken
+ *   retry loop does immediately, which is exactly the case this stops. It also
+ *   keeps several people demonstrating side by side from throttling each other.
  *
  * DAILY — 100 requests per IP per day.
- *   Worst case with four developers on four IPs is 400 requests, comfortably
- *   under 1,500, leaving roughly two thirds of the quota as headroom for demo
- *   day and for graders trying the deployed app. 100 analyses a day is far more
- *   than manual testing needs; anything past it is a loop, not a person.
+ *   Worst case with four developers on four IPs is 400 analyses, around $0.24 —
+ *   a known, small ceiling rather than an open-ended one. 100 analyses a day is
+ *   far more than manual testing needs; anything past it is a loop, not a
+ *   person.
  *
  * These are per-IP by design. Behind a reverse proxy (Render, Railway, nginx)
  * every request otherwise appears to come from the proxy and one user's limit
@@ -41,7 +37,7 @@ const limitMessage: ApiError = {
   error: 'Too many requests. Please wait a moment and try again.',
 }
 
-/** Stops runaway loops within a minute, before they reach the provider's RPM cap. */
+/** Stops runaway loops within a minute, before they turn into a bill. */
 export const burstRateLimit = rateLimit({
   windowMs: 60 * 1000,
   limit: 5,
@@ -50,7 +46,7 @@ export const burstRateLimit = rateLimit({
   message: limitMessage,
 })
 
-/** Protects the shared 1,500/day quota from being drained by one client. */
+/** Caps what a single client can spend from the shared account in a day. */
 export const dailyRateLimit = rateLimit({
   windowMs: 24 * 60 * 60 * 1000,
   limit: 100,
