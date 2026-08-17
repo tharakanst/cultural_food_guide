@@ -32,7 +32,7 @@ src/index.ts              bootstrap — middleware, port
    project plan commits to collecting and storing nothing.
 3. **Validate before calling the provider.** Reject anything that is not an image
    data URL, and enforce the payload size cap. An unvalidated request that reaches
-   Gemini costs quota from a shared free tier.
+   OpenAI costs real money on a shared, billed account.
 4. **Errors returned to the client are generic.** `{ error: "Failed to analyze
    image" }`. Stack traces and provider errors go to the server log only.
 5. **URLs from external APIs are validated before being returned to the client.**

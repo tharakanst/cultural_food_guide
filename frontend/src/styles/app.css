@@ -183,6 +183,13 @@ p {
   text-align: center;
 }
 
+/* The hint is a permanently mounted live region (see CameraCapture), so it is
+   present even with nothing to say. Collapse it when empty so the padding does
+   not leave a gap under the camera controls. */
+.camera__hint:empty {
+  display: none;
+}
+
 .camera__preview {
   width: 100%;
   max-width: 100%;
@@ -302,13 +309,24 @@ p {
   margin-bottom: var(--space-xs);
 }
 
-.reference-image {
+/*
+ * The <figure> wrapper needs an explicit margin reset.
+ *
+ * Browsers apply `margin: 1em 40px` to <figure> by default. Unreset, that eats
+ * 80px of horizontal space — on a 375px phone, where the app content is around
+ * 343px wide, the reference photo would sit deeply indented and out of line
+ * with everything above it. Only the <img> inside was being reset, so the
+ * wrapper's default survived.
+ */
+.reference-figure {
+  margin: 0;
+  padding: 0;
+}
+
+.reference-figure__img {
+  margin: 0;
+  padding: 0;
   width: 100%;
-  height: auto;
-  max-width: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  display: block;
 }
 
 .reference-image__caption {
@@ -317,15 +335,43 @@ p {
   margin-top: var(--space-xs);
 }
 
+.reference-image__caption a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  font-weight: 500;
+}
+
+.reference-image__caption a:hover {
+  text-decoration-thickness: 2px;
+}
+
+.reference-image__caption a:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 .disclaimer {
   color: var(--color-text);
   background: var(--color-notice-bg);
-  border-left: 4px solid var(--color-notice-accent);
+  border: 2px solid var(--color-notice-accent);
   border-radius: var(--radius);
   padding: var(--space-md);
   margin: 0;
-  font-size: 1rem;
+  font-size: inherit;
+  font-weight: 500;
 }
+
+/*
+ * Icons for notices, allergens and the disclaimer are in the markup as
+ * <span aria-hidden="true">, not CSS ::before content.
+ *
+ * aria-hidden cannot be applied to a pseudo-element, and generated content is
+ * sometimes included in the accessible name — with emoji pronounced
+ * inconsistently across screen readers ("warning sign emoji", or nothing).
+ * These icons sit on headings that receive programmatic focus, so a stray
+ * announcement would land exactly when the user is listening for the message.
+ */
 
 /* ---- Status ------------------------------------------------------------ */
 
@@ -351,9 +397,20 @@ p {
   }
 }
 
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .spinner {
-    animation-duration: 4s;
+    animation: pulse 1.8s ease-in-out infinite;
+    border-top-color: var(--color-border);
   }
 
   *,

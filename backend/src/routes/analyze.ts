@@ -43,7 +43,7 @@ function decodedByteLength(base64: string): number {
  * Validate the request body against AnalyzeRequest.
  *
  * This runs before anything reaches the provider — an unvalidated request that
- * gets as far as Gemini costs quota from a shared free tier.
+ * gets as far as OpenAI costs real money on a shared, billed account.
  *
  * Messages describe what the caller got wrong without revealing anything about
  * internals; that is a different thing from the generic message used for

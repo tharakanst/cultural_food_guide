@@ -77,12 +77,17 @@ confidence instead of anxiety.
   personal identifiers, or other user data is collected or stored, minimizing
   privacy risk for users
 - **Transparency about data transfer:** the app discloses in the interface that
-  the photo is sent to Google's Gemini API for analysis, not only to our own
-  server. Naming the third party is what makes the disclosure meaningful; stating
-  that we do not store the image, while omitting where it is forwarded, would be
-  accurate but misleading. Because the team is in the EEA, Google's paid-tier
-  data policy applies even on the free tier, so submitted images are not used to
-  train Google's models
+  the photo is sent to OpenAI for analysis, not only to our own server. Naming
+  the third party is what makes the disclosure meaningful; stating that we do not
+  store the image, while omitting where it is forwarded, would be accurate but
+  misleading.
+- **Third-party processing:** images are processed by OpenAI's API as a
+  sub-processor. The specific retention and training terms that apply to API
+  traffic must be confirmed against OpenAI's current API data-usage policy rather
+  than assumed — an earlier draft of this plan asserted a data policy carried
+  over from a different provider, which is exactly the kind of claim that must be
+  verified rather than inherited. See the compliance review for the confirmed
+  position.
 
 ## Expected deliverable
 

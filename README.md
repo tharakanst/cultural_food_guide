@@ -34,17 +34,20 @@ scan and the block on committing directly to `main`.
 
 **Run this once per clone, on every machine.**
 
-### 3. Set the Gemini API key
+### 3. Set the OpenAI API key
 
-The team shares one key unless you want to create your own. The free tier allows 1,500 requests per day, which is comfortably enough for four
-people during this project.
+The team shares one key. **Unlike the previous provider, this one is billed per
+token — there is no free tier.** A single analysis costs roughly **$0.0006**
+(about 2,300 input tokens for a photo plus ~100 output), so a thousand test scans
+is well under a euro. Cheap, but not free: an accidental loop in a test costs
+real money, which is why the backend rate-limits `/api/*`.
 
 ```bash
 cd backend
 cp .env.example .env
 ```
 
-Then open `backend/.env` and set `GEMINI_API_KEY=` to the shared key.
+Then open `backend/.env` and set `OPENAI_API_KEY=` to the shared key.
 
 `.env` is gitignored and a hook blocks agents from reading it. **Never commit it,
 and never paste the key into a chat, an issue, or a commit message** — a shared
@@ -153,7 +156,7 @@ pulling changes that touch `.claude/`, since it is read once at startup.
 | ------------------------ | -------------------------------------------------- |
 | `frontend-expert`        | React components, PWA, responsive layout           |
 | `backend-expert`         | Express routes, services, middleware               |
-| `llm-integration`        | Prompt tuning, output reliability, the Gemini call |
+| `llm-integration`        | Prompt tuning, output reliability, the OpenAI call |
 | `accessibility-reviewer` | WCAG review — read-only, reports rather than edits |
 | `test-designer`          | Test cases and blind-spot analysis                 |
 | `doc-generator`          | Technical documentation from code                  |
@@ -168,7 +171,7 @@ Commands: `/prep-submit`, `/sync-plan`, `/pr-description`.
 These are in `AGENTS.md` too, but they matter enough to repeat:
 
 1. **The API key never reaches the client.** It lives in `backend/.env`, read only
-   by the service layer. Do not "simplify" by calling Gemini from React — that
+   by the service layer. Do not "simplify" by calling OpenAI from React — that
    ships your key to every visitor in the JavaScript bundle.
 2. **No personal data is collected or stored.** No location, no identifiers, no
    accounts, no saved images. The project plan commits to this.
@@ -179,8 +182,11 @@ These are in `AGENTS.md` too, but they matter enough to repeat:
 
 ## Known limitations
 
-- Free tier allows 15 requests per minute, which could throttle a live demo if
-  several people use it at once
+- API usage is billed per token, so heavy testing has a real (if small) cost, and
+  the backend rate limit is what stops a loop becoming an invoice
+- Model choice is `gpt-5.6-luna`, the cheapest tier that handles vision and
+  structured output. Whether it reads small Finnish label text as accurately as a
+  larger model has not been measured against real photographs
 - Cultural claims are not verified against any source
 - Wikimedia reference images are matched by dish name and are sometimes wrong or
   absent

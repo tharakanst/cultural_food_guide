@@ -4,6 +4,24 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  server: {
+    /*
+     * Listen on all interfaces rather than Vite's default of `localhost`.
+     *
+     * On Windows, `localhost` resolves to the IPv6 loopback and Vite binds to
+     * `::1` only. Testing on a real phone over USB uses
+     * `adb reverse tcp:5173 tcp:5173`, and adb connects to `127.0.0.1` — IPv4 —
+     * so the connection is refused before it reaches the app and the phone shows
+     * "site can't be reached". The Express backend happens to work because it
+     * binds dual-stack (`::`), which is why only the frontend failed.
+     *
+     * Binding here rather than passing `--host` so phone testing works from the
+     * normal `npm run dev`, with nothing extra to remember. It also enables
+     * same-Wi-Fi testing via the LAN address, though the camera needs HTTPS on
+     * anything that is not localhost.
+     */
+    host: true,
+  },
   plugins: [
     react(),
     VitePWA({

@@ -301,9 +301,25 @@ export function App() {
                   the first heading in the region rather than the outer
                   container, since a container div has no accessible name for
                   a screen reader to announce on focus. */}
-              <h2 tabIndex={-1}>This service is busy</h2>
+              {/* Icon in markup, not a CSS ::before, so aria-hidden can keep
+                  it out of the announcement — see FoodResult's allergen
+                  heading for the reasoning. */}
+              <h2 tabIndex={-1}>
+                <span aria-hidden="true">ℹ️ </span>
+                This service is busy
+              </h2>
               <p>{state.message}</p>
               <p>{describeRateLimitWait(state.retryAfterSeconds)}</p>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => void analyze()}
+                  disabled={false}
+                >
+                  Try again
+                </button>
+              </div>
             </div>
           ) : null}
 
@@ -323,6 +339,16 @@ export function App() {
                 This is a problem on our side, not with your photo. Try again in a moment — the same
                 photo is fine.
               </p>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => void analyze()}
+                  disabled={false}
+                >
+                  Try again
+                </button>
+              </div>
             </div>
           ) : null}
 
@@ -335,13 +361,13 @@ export function App() {
           Transparency about the onward transfer, not just our own handling.
           The previous wording said only "sent to our server", which a reader
           would reasonably take to mean the photo stops there. It does not — it
-          is forwarded to Google's Gemini API for analysis. Naming the third
+          is forwarded to OpenAI for analysis. Naming the third
           party is the honest disclosure; describing our server alone is not.
         */}
         <p>
-          Your photo is sent to our server and then to Google&rsquo;s Gemini AI service, which
-          analyses it and generates the result. Photos are not stored by us and are discarded once
-          the result is returned. No account, no location, no tracking.
+          Your photo is sent to our server and then to OpenAI, which analyses it and generates the
+          result. Photos are not stored by us and are discarded once the result is returned. No
+          account, no location, no tracking.
         </p>
         <p>
           Results are AI-generated and can be wrong. Always check official packaging or ask staff

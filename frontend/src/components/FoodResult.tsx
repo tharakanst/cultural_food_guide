@@ -177,7 +177,10 @@ export function FoodResult({ result }: FoodResultProps) {
               heading inside the result region rather than the container div,
               since an unlabelled div announces nothing to a screen reader on
               focus. */}
-          <h2 tabIndex={-1}>We could not identify this</h2>
+          <h2 tabIndex={-1}>
+            <span aria-hidden="true">ℹ️ </span>
+            We could not identify this
+          </h2>
           <p>
             The photo could not be matched to a food, product or menu item with enough confidence to
             tell you anything useful about it.
@@ -190,7 +193,10 @@ export function FoodResult({ result }: FoodResultProps) {
           </ul>
           <p>Take another photo and try again.</p>
         </div>
-        <p className="disclaimer">{disclaimer}</p>
+        <p className="disclaimer">
+        <span aria-hidden="true">ℹ️ </span>
+        {disclaimer}
+      </p>
       </div>
     )
   }
@@ -219,6 +225,15 @@ export function FoodResult({ result }: FoodResultProps) {
       */}
       <section className="allergens" aria-labelledby="allergens-heading">
         <h3 id="allergens-heading" className="allergens__heading">
+          {/*
+            The warning icon is markup rather than a CSS ::before so it can be
+            hidden from assistive technology — aria-hidden cannot be applied to
+            a pseudo-element. Screen readers announce emoji inconsistently
+            ("warning sign emoji", or nothing, depending on the engine), and
+            this heading is the one place where a stray announcement lands
+            exactly when someone is listening for allergen information.
+          */}
+          <span aria-hidden="true">⚠️ </span>
           Allergens and dietary information
         </h3>
         {allergens.length > 0 ? (
@@ -287,7 +302,10 @@ export function FoodResult({ result }: FoodResultProps) {
 
       {/* Always rendered — a responsible-AI commitment from the project plan,
           not a conditional nicety. */}
-      <p className="disclaimer">{disclaimer}</p>
+      <p className="disclaimer">
+        <span aria-hidden="true">ℹ️ </span>
+        {disclaimer}
+      </p>
     </div>
   )
 }
