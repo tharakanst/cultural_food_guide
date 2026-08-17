@@ -419,3 +419,32 @@ p {
     transition-duration: 0.01ms !important;
   }
 }
+
+.menu-carousel {
+  width: 100%;
+}
+
+.menu-carousel__header {
+  margin-bottom: 1rem;
+}
+
+.menu-carousel__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.menu-carousel__counter {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.menu-carousel__slide {
+  width: 100%;
+}
+
+.menu-carousel__loading {
+  min-height: 12rem;
+}

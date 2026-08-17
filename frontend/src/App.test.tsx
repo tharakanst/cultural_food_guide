@@ -30,6 +30,8 @@ function jsonResponse(body: unknown, ok = true, status = ok ? 200 : 500) {
 }
 
 const identifiedResult: AnalyzeResponse = {
+  resultType: 'food',
+  menuItems: [],
   identified: true,
   name: 'Karjalanpiirakka',
   description: 'A savoury Karelian rice pastry.',
@@ -40,6 +42,8 @@ const identifiedResult: AnalyzeResponse = {
 }
 
 const unidentifiedResult: AnalyzeResponse = {
+  resultType: 'unidentified',
+  menuItems: [],
   identified: false,
   name: '',
   description: 'The photo is too blurry to read.',

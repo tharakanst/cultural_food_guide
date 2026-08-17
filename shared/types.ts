@@ -25,6 +25,9 @@ export interface AnalyzeRequest {
 
 /** POST /api/analyze — success response. */
 export interface AnalyzeResponse {
+
+  resultType: 'food' | 'menu' | 'unidentified'
+
   /**
    * False when the image could not be identified as food — unreadable,
    * ambiguous, or not food at all.
@@ -87,6 +90,9 @@ export interface AnalyzeResponse {
    * responsible-AI commitments.
    */
   disclaimer: string
+
+  menuItems: MenuItemSource[]
+
 }
 
 /**
@@ -97,4 +103,14 @@ export interface AnalyzeResponse {
  */
 export interface ApiError {
   error: string
+}
+
+export interface MenuItemSource {
+  name: string
+  menuText: string
+}
+
+export interface MenuItemAnalysisRequest {
+  name: string
+  menuText: string
 }
