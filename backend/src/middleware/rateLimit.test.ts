@@ -27,10 +27,10 @@ function buildApp() {
 }
 
 describe('burstRateLimit', () => {
-  it('allows 5 requests per minute per client and rejects the 6th with a distinguishable message', async () => {
+  it('allows 15 requests per minute per client and rejects the 16th with a distinguishable message', async () => {
     const app = buildApp()
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 15; i++) {
       const res = await request(app).get('/api/probe')
       expect(res.status).toBe(200)
     }

@@ -43,6 +43,8 @@ function dataUrlOfSize(bytes: number, mimeType = 'image/jpeg'): string {
 const TINY_JPEG_DATA_URL = dataUrlOfSize(100)
 
 const VALID_ANALYSIS = {
+  resultType: 'food',
+  menuItems: [],
   identified: true,
   name: 'Karjalanpiirakka',
   description: 'A savoury Karelian rice pastry.',
@@ -53,6 +55,8 @@ const VALID_ANALYSIS = {
 }
 
 const UNIDENTIFIED_ANALYSIS = {
+  resultType: 'unidentified',
+  menuItems: [],
   identified: false,
   name: '',
   description: 'The photo is too blurry to read.',

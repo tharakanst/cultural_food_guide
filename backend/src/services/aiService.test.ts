@@ -26,6 +26,8 @@ vi.mock('openai', () => {
 })
 
 const VALID_PAYLOAD = {
+  resultType: 'food',
+  menuItems: [],
   identified: true,
   name: 'Karjalanpiirakka',
   description: 'A savoury Karelian rice pastry.',
