@@ -248,11 +248,21 @@ export function App() {
         menuText: item.menuText,
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/analyze/menu-item`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
+      let response: Response
+      try {
+        response = await fetch(`${API_BASE_URL}/api/analyze/menu-item`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+      } catch {
+        // Mirrors analyze()'s network-failure handling above. Without this,
+        // a raw fetch rejection (offline, DNS failure, CORS block) reaches
+        // MenuCarousel's generic error.message fallback verbatim as the
+        // browser's own technical text, instead of the same friendly message
+        // the main photo-analysis flow gives for the identical failure.
+        throw new Error('Could not reach the server. Check your connection and try again.')
+      }
 
       const payload: unknown = await response.json().catch(() => null)
 
