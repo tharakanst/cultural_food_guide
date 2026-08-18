@@ -281,6 +281,19 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
     <section className="camera" aria-labelledby="camera-heading">
       <h2 id="camera-heading">Take or choose a photo</h2>
 
+      {/*
+        Static, always visible — before either capture path is touched, not
+        after. The footer already discloses that photos go to OpenAI, but that
+        is a privacy-policy-style disclosure read after the fact; this is the
+        actionable version, said before the photo is taken, when it can still
+        change what ends up in frame. Not a live region: the content never
+        changes, so there is nothing here for a screen reader to announce.
+      */}
+      <p className="camera__privacy-note">
+        Try to keep other people and personal documents like receipts out of
+        the frame — this photo is sent to OpenAI for analysis.
+      </p>
+
       {status === 'live' ? (
         <div className="camera__viewport">
           <video
