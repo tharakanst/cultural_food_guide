@@ -40,7 +40,7 @@ const limitMessage: ApiError = {
 /** Stops runaway loops within a minute, before they turn into a bill. */
 export const burstRateLimit = rateLimit({
   windowMs: 60 * 1000,
-  limit: 5,
+  limit: 15,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   message: limitMessage,

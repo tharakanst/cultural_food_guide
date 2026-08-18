@@ -8,8 +8,8 @@
 
 import { Router } from 'express'
 import type { Request, Response } from 'express'
-import type { AnalyzeRequest, AnalyzeResponse, ApiError } from '../../../shared/types'
-import { analyzeImage } from '../services/aiService'
+import type { AnalyzeRequest, AnalyzeResponse, MenuItemAnalysisRequest, ApiError } from '../../../shared/types'
+import { analyzeImage, analyzeMenuItem } from '../services/aiService'
 import { findReferenceImage } from '../services/imageService'
 
 /**
@@ -19,6 +19,9 @@ import { findReferenceImage } from '../services/imageService'
  */
 const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024 // 10 MB
+
+const MAX_MENU_ITEM_NAME_CHARS = 200
+const MAX_MENU_TEXT_CHARS = 2_000
 
 /**
  * data:<mime>;base64,<payload>
@@ -85,6 +88,40 @@ function validateAnalyzeRequest(body: unknown): ValidationResult {
   return { ok: true, base64, mimeType }
 }
 
+type MenuItemValidationResult =
+  | { ok: true; name: string; menuText: string }
+  | { ok: false; status: number; error: string }
+
+function validateMenuItemRequest(body: unknown): MenuItemValidationResult {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return { ok: false, status: 400, error: 'Request body must be a JSON object' }
+  }
+
+  const { name, menuText } = body as Partial<MenuItemAnalysisRequest>
+
+  if (typeof name !== 'string' || name.trim().length === 0) {
+    return { ok: false, status: 400, error: 'Request must include a menu item name' }
+  }
+
+  if (name.length > MAX_MENU_ITEM_NAME_CHARS) {
+    return { ok: false, status: 400, error: 'Menu item name is too long' }
+  }
+
+  if (typeof menuText !== 'string') {
+    return { ok: false, status: 400, error: 'Menu text must be a string' }
+  }
+
+  if (menuText.length > MAX_MENU_TEXT_CHARS) {
+    return { ok: false, status: 400, error: 'Menu text is too long' }
+  }
+
+  return {
+    ok: true,
+    name: name.trim(),
+    menuText: menuText.trim(),
+  }
+}
+
 const router = Router()
 
 router.post('/analyze', async (req: Request, res: Response<AnalyzeResponse | ApiError>) => {
@@ -100,9 +137,10 @@ router.post('/analyze', async (req: Request, res: Response<AnalyzeResponse | Api
     // The reference photo must be a real photograph, never AI-generated, so it
     // is looked up separately and only when there is a dish to look up. A
     // failure here is not a failure of the request.
-    const referenceImageUrl = analysis.identified
-      ? await findReferenceImage(analysis.name)
-      : undefined
+    const referenceImageUrl =
+      analysis.resultType === 'food' && analysis.identified
+        ? await findReferenceImage(analysis.name)
+        : undefined
 
     const response: AnalyzeResponse = { ...analysis }
     if (referenceImageUrl) response.referenceImageUrl = referenceImageUrl
@@ -115,5 +153,43 @@ router.post('/analyze', async (req: Request, res: Response<AnalyzeResponse | Api
     res.status(500).json({ error: 'Failed to analyze image' })
   }
 })
+
+router.post(
+  '/analyze/menu-item',
+  async (req: Request, res: Response<AnalyzeResponse | ApiError>) => {
+    const validation = validateMenuItemRequest(req.body)
+
+    if (!validation.ok) {
+      res.status(validation.status).json({ error: validation.error })
+      return
+    }
+
+    try {
+      const analysis = await analyzeMenuItem(
+        validation.name,
+        validation.menuText,
+      )
+
+      const referenceImageUrl =
+        analysis.resultType === 'food' && analysis.identified
+          ? await findReferenceImage(analysis.name)
+          : undefined
+
+      const response: AnalyzeResponse = { ...analysis }
+
+      if (referenceImageUrl) {
+        response.referenceImageUrl = referenceImageUrl
+      }
+
+      res.status(200).json(response)
+    } catch (error) {
+      console.error('[analyze/menu-item] request failed:', error)
+
+      res.status(500).json({
+        error: 'Failed to analyze menu item',
+      })
+    }
+  },
+)
 
 export default router

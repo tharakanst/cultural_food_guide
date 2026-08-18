@@ -4,6 +4,8 @@ import { FoodResult } from './FoodResult'
 import type { AnalyzeResponse } from '../../../shared/types'
 
 const unidentified: AnalyzeResponse = {
+  resultType: 'unidentified',
+  menuItems: [],
   identified: false,
   name: '',
   description: 'The photo is too blurry to read the menu text.',
@@ -14,6 +16,8 @@ const unidentified: AnalyzeResponse = {
 }
 
 const identifiedNoAllergens: AnalyzeResponse = {
+  resultType: 'food',
+  menuItems: [],
   identified: true,
   name: 'Karjalanpiirakka',
   description: 'A savoury Karelian rice pastry.',
@@ -24,6 +28,8 @@ const identifiedNoAllergens: AnalyzeResponse = {
 }
 
 const fullResult: AnalyzeResponse = {
+  resultType: 'food',
+  menuItems: [],
   identified: true,
   name: 'Lohikeitto',
   description: 'A creamy Finnish salmon soup.',

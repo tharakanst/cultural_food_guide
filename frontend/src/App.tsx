@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AnalyzeRequest, AnalyzeResponse, ApiError } from '../../shared/types'
+import type {
+  AnalyzeRequest,
+  AnalyzeResponse,
+  MenuItemAnalysisRequest,
+  MenuItemSource,
+  ApiError,
+} from '../../shared/types'
 import { CameraCapture } from './components/CameraCapture'
 import { FoodResult } from './components/FoodResult'
-
+import { MenuCarousel } from './components/MenuCarousel'
 /**
  * Our own backend — never a provider endpoint.
  *
@@ -97,8 +103,27 @@ function isApiError(value: unknown): value is ApiError {
  *  than crashing on `.map` of undefined. */
 function isAnalyzeResponse(value: unknown): value is AnalyzeResponse {
   if (typeof value !== 'object' || value === null) return false
+
   const candidate = value as Partial<AnalyzeResponse>
+
+  const validResultType =
+    candidate.resultType === 'food' ||
+    candidate.resultType === 'menu' ||
+    candidate.resultType === 'unidentified'
+
+  const validMenuItems =
+    Array.isArray(candidate.menuItems) &&
+    candidate.menuItems.every(
+      (item) =>
+        typeof item === 'object' &&
+        item !== null &&
+        typeof item.name === 'string' &&
+        typeof item.menuText === 'string',
+    )
+
   return (
+    validResultType &&
+    validMenuItems &&
     typeof candidate.identified === 'boolean' &&
     typeof candidate.name === 'string' &&
     typeof candidate.description === 'string' &&
@@ -216,6 +241,38 @@ export function App() {
     }
   }, [image])
 
+  const loadMenuItem = useCallback(
+    async (item: MenuItemSource): Promise<AnalyzeResponse> => {
+      const body: MenuItemAnalysisRequest = {
+        name: item.name,
+        menuText: item.menuText,
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/analyze/menu-item`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      const payload: unknown = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        throw new Error(
+          isApiError(payload)
+            ? payload.error
+            : 'Could not load details for this menu item.',
+        )
+      }
+
+      if (!isAnalyzeResponse(payload)) {
+        throw new Error('The server returned an invalid menu item result.')
+      }
+
+      return payload
+    },
+    [],
+  )
+
   /*
    * The screen-reader announcement for the current state.
    *
@@ -233,9 +290,18 @@ export function App() {
   if (state.status === 'loading') {
     announcement = 'Identifying your photo. This usually takes a few seconds.'
   } else if (state.status === 'result') {
-    announcement = state.data.identified
-      ? `Identified as ${state.data.name}. Result below, including allergen information.`
-      : 'This photo could not be identified. Suggestions below.'
+    if (state.data.resultType === 'menu') {
+      const count = state.data.menuItems.length
+
+      announcement =
+        `${count} menu ${count === 1 ? 'item' : 'items'} found. ` +
+        'Use the menu result controls below to view each item.'
+    } else if (state.data.identified) {
+      announcement =
+        `Identified as ${state.data.name}. Result below, including allergen information.`
+    } else {
+      announcement = 'This photo could not be identified. Suggestions below.'
+    }
   }
 
   return (
@@ -352,7 +418,17 @@ export function App() {
             </div>
           ) : null}
 
-          {state.status === 'result' ? <FoodResult result={state.data} /> : null}
+          {state.status === 'result' ? (
+            state.data.resultType === 'menu' ? (
+              <MenuCarousel
+                items={state.data.menuItems}
+                disclaimer={state.data.disclaimer}
+                loadItem={loadMenuItem}
+              />
+            ) : (
+              <FoodResult result={state.data} />
+            )
+          ) : null}
         </div>
       </main>
 
