@@ -12,10 +12,14 @@
  * That changes what these limits are for. They previously protected a quota that
  * would simply run out; they now protect a bill that will not. Two limiters:
  *
- * BURST — 5 requests per minute per IP.
- *   A human photographing food does not exceed 5 requests a minute; a broken
- *   retry loop does immediately, which is exactly the case this stops. It also
- *   keeps several people demonstrating side by side from throttling each other.
+ * BURST — 15 requests per minute per IP.
+ *   Raised from an original 5 once the menu-item flow shipped: browsing a menu
+ *   makes one request per item the user opens, and MenuCarousel prefetches one
+ *   item ahead of whichever is currently shown, so working through a handful of
+ *   menu items in quick succession can itself reach several requests a minute
+ *   with no loop involved. 15 keeps that legitimate — a broken retry loop still
+ *   hits this limit immediately, and it still keeps several people demonstrating
+ *   side by side from throttling each other.
  *
  * DAILY — 100 requests per IP per day.
  *   Worst case with four developers on four IPs is 400 analyses, around $0.24 —

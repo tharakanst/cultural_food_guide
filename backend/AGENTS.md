@@ -22,6 +22,14 @@ src/index.ts              bootstrap — middleware, port
   No prompt text, no provider SDK calls, no business logic in routes.
 - Services never import Express types. They take plain arguments and return plain
   data, so they can be tested without an HTTP server.
+- `routes/analyze.ts` now handles two routes: `POST /api/analyze` (photo in) and
+  `POST /api/analyze/menu-item` (one previously-extracted item in). Both are thin
+  in the same sense — validate, call a service, attach a reference image, shape
+  the response — and both delegate to `aiService.ts`, which exports
+  `analyzeImage` and `analyzeMenuItem` for them respectively. The menu-item path
+  does not introduce a new ownership boundary: both functions live in
+  `aiService.ts` and belong to the `llm-integration` agent per the OWNERSHIP
+  comment at the top of that file, exactly like `analyzeImage` already did.
 
 ## Hard rules
 
@@ -69,9 +77,11 @@ real-world text.
 
 ## Security middleware
 
-`helmet` for headers, `express-rate-limit` on `/api/*`. The rate limit protects a
-shared 1,500 requests/day free tier — without it a single loop in testing can
-exhaust the team's quota.
+`helmet` for headers, `express-rate-limit` on `/api/*`. OpenAI is billed per
+token on one shared account with no free tier, so the rate limit bounds spend
+rather than protecting a quota — without it a single runaway loop turns into a
+bill, not just an exhausted allowance. See the numbers and reasoning in
+`src/middleware/rateLimit.ts`.
 
 CORS is restricted to the frontend origin. Do not widen it to `*` to fix a local
 problem; set the origin via environment variable instead.

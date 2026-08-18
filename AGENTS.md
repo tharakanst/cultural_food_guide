@@ -81,7 +81,13 @@ commitments in the project plan.
 redeclare these shapes on either side.**
 
 ```ts
-import type { AnalyzeRequest, AnalyzeResponse, ApiError } from '../../shared/types'
+import type {
+  AnalyzeRequest,
+  AnalyzeResponse,
+  MenuItemAnalysisRequest,
+  MenuItemSource,
+  ApiError,
+} from '../../shared/types'
 ```
 
 The file is types-only by design: TypeScript erases `import type` at compile
@@ -92,11 +98,25 @@ would break this property.
 `POST /api/analyze` takes `AnalyzeRequest` and returns `AnalyzeResponse`, or
 `ApiError` with a non-2xx status.
 
-Two fields carry requirements worth knowing before you use them:
+`POST /api/analyze/menu-item` takes `MenuItemAnalysisRequest` (`{ name,
+menuText }` — one entry from a previous `menuItems` response) and returns the
+same `AnalyzeResponse` shape, or `ApiError`. It analyses a single menu item
+after the user picks it, rather than analysing every item on a menu up front.
+
+A few fields carry requirements worth knowing before you use them:
 
 - **`identified: boolean`** — false when the photo could not be identified as
   food. The frontend must then show an honest "could not identify this" state
   rather than rendering a guess as a result.
+- **`resultType: 'food' | 'menu' | 'unidentified'`** — discriminates the
+  response. `'food'` is a single dish or product with the detailed fields
+  populated. `'menu'` means the photo showed several orderable items: the
+  detailed fields are empty and `menuItems` holds each item's name and printed
+  text instead, with no analysis done yet. `'unidentified'` pairs with
+  `identified: false`.
+- **`menuItems: MenuItemSource[]`** — populated only when `resultType` is
+  `'menu'`. Each entry needs its own `POST /api/analyze/menu-item` request to
+  get an actual analysis.
 - **`allergens: string[]`** — safety-critical, and must state uncertainty
   explicitly when the model is inferring rather than reading a label.
 

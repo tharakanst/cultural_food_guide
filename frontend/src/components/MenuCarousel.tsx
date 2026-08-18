@@ -27,6 +27,44 @@ export function MenuCarousel({
   >({})
 
   /*
+   * Previous/Next become disabled exactly when the click that just fired
+   * lands on a boundary. Browsers unconditionally blur a button the instant
+   * it is disabled, which drops keyboard focus to <body> with no warning —
+   * the same class of bug CameraCapture guards against for its own
+   * status-dependent controls. These refs let goPrevious/goNext move focus
+   * to the button that stays enabled instead of losing it.
+   */
+  const previousButtonRef = useRef<HTMLButtonElement | null>(null)
+  const nextButtonRef = useRef<HTMLButtonElement | null>(null)
+
+  /*
+   * Which boundary button should take focus once the render this click
+   * triggers has actually committed.
+   *
+   * Calling .focus() synchronously inside goPrevious/goNext looked right but
+   * was not: at that point in the event handler, setCurrentIndex has only
+   * been queued, not yet applied to the DOM, so the target button can still
+   * be showing its *previous* disabled state. For most transitions the
+   * target was already enabled before the click, so this was invisible, but
+   * a two-item menu can move from index 0 straight to the last index in one
+   * click, and Previous is disabled at index 0 — a disabled element cannot
+   * take focus, so the call silently did nothing. Deferring the focus call
+   * to an effect keyed on currentIndex guarantees it runs after commit, once
+   * the target is actually enabled — the same pattern CameraCapture already
+   * uses for its own status-dependent controls.
+   */
+  const pendingBoundaryFocusRef = useRef<'previous' | 'next' | null>(null)
+
+  useEffect(() => {
+    if (pendingBoundaryFocusRef.current === 'previous') {
+      previousButtonRef.current?.focus()
+    } else if (pendingBoundaryFocusRef.current === 'next') {
+      nextButtonRef.current?.focus()
+    }
+    pendingBoundaryFocusRef.current = null
+  }, [currentIndex])
+
+  /*
    * Results that have already been generated stay cached for the lifetime of
    * this menu result. Returning to an earlier item therefore does not make
    * another OpenAI request.
@@ -205,18 +243,29 @@ export function MenuCarousel({
     announcement =
       `Details ready for ${currentItem.name}. ` +
       `Item ${currentIndex + 1} of ${items.length}.`
-  } else if (currentItem && currentState?.status === 'error') {
-    announcement = `Could not load details for ${currentItem.name}.`
   }
+  // Deliberately no case for status 'error': the role="alert" panel below
+  // already announces it on mount. Announcing it here too would say the same
+  // thing twice, which the project treats as worse than saying it once — see
+  // App.tsx's identical reasoning for its own error state.
 
   const goPrevious = () => {
-    setCurrentIndex((index) => Math.max(0, index - 1))
+    const newIndex = Math.max(0, currentIndex - 1)
+    if (newIndex === 0) {
+      // This click is about to disable Previous. Flag Next to take focus
+      // once the render actually commits — see pendingBoundaryFocusRef above
+      // for why this cannot be done synchronously here.
+      pendingBoundaryFocusRef.current = 'next'
+    }
+    setCurrentIndex(newIndex)
   }
 
   const goNext = () => {
-    setCurrentIndex((index) =>
-      Math.min(items.length - 1, index + 1),
-    )
+    const newIndex = Math.min(items.length - 1, currentIndex + 1)
+    if (newIndex === items.length - 1) {
+      pendingBoundaryFocusRef.current = 'previous'
+    }
+    setCurrentIndex(newIndex)
   }
 
   return (
@@ -251,6 +300,7 @@ export function MenuCarousel({
         aria-label="Menu item navigation"
       >
         <button
+          ref={previousButtonRef}
           type="button"
           className="btn"
           onClick={goPrevious}
@@ -264,6 +314,7 @@ export function MenuCarousel({
         </span>
 
         <button
+          ref={nextButtonRef}
           type="button"
           className="btn"
           onClick={goNext}

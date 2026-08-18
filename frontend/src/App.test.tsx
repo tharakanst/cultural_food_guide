@@ -53,6 +53,21 @@ const unidentifiedResult: AnalyzeResponse = {
   disclaimer: 'This information is AI-generated and may be wrong.',
 }
 
+const menuResult: AnalyzeResponse = {
+  resultType: 'menu',
+  menuItems: [
+    { name: 'Karjalanpiirakka', menuText: 'Rye pastry, 4.50€' },
+    { name: 'Lohikeitto', menuText: 'Creamy salmon soup, 12.90€' },
+  ],
+  identified: true,
+  name: '',
+  description: '',
+  ingredients: [],
+  allergens: [],
+  culturalContext: '',
+  disclaimer: 'This information is AI-generated and may be wrong.',
+}
+
 describe('App — basic rendering', () => {
   it('renders the app heading', () => {
     render(<App />)
@@ -289,5 +304,157 @@ describe('App — analyze flow', () => {
     expect(
       screen.queryByRole('heading', { name: /could not identify this/i }),
     ).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * resultType: 'menu' is the discriminant the menu-analysis feature added to
+ * AnalyzeResponse. The 'food' and 'unidentified' branches were already
+ * exercised end-to-end above; this describe block is what was actually
+ * missing — App.tsx's own resultType === 'menu' branch (which renders
+ * MenuCarousel instead of FoodResult) had no test at all before this.
+ */
+describe('App — resultType: "menu"', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('renders the menu carousel, not a single food result, when resultType is "menu"', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(menuResult))
+    const { user, button } = await uploadAndWaitForButton()
+    await user.click(button)
+
+    expect(await screen.findByRole('heading', { name: /menu found/i })).toBeInTheDocument()
+    expect(screen.getByText('2 items detected.')).toBeInTheDocument()
+  })
+
+  it('announces the menu item count via the live region, distinct from the single-dish "identified as" wording', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(menuResult))
+    const { user, button } = await uploadAndWaitForButton()
+    await user.click(button)
+
+    await screen.findByRole('heading', { name: /menu found/i })
+    const announced = screen
+      .getAllByRole('status')
+      .some((region) => /2 menu items found/i.test(region.textContent ?? ''))
+    expect(announced).toBe(true)
+  })
+
+  it('treats a resultType: "menu" response with a malformed menuItems entry as invalid, rather than crashing', async () => {
+    const malformed = {
+      ...menuResult,
+      menuItems: [{ name: 'Karjalanpiirakka' /* missing menuText */ }],
+    }
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(malformed))
+    const { user, button } = await uploadAndWaitForButton()
+    await user.click(button)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /something went wrong while identifying this photo/i,
+    )
+    expect(screen.queryByRole('heading', { name: /menu found/i })).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * loadMenuItem (App.tsx) is the real fetch-based implementation passed to
+ * MenuCarousel as its `loadItem` prop. MenuCarousel.test.tsx covers
+ * MenuCarousel's own handling of whatever loadItem resolves or rejects with,
+ * using a plain mock — it does not exercise the actual request shape or the
+ * real error-mapping behaviour of loadMenuItem itself, which is what these
+ * tests are for.
+ */
+describe('App — loading an individual menu item (loadMenuItem wiring)', () => {
+  const menuItemResult: AnalyzeResponse = {
+    resultType: 'food',
+    menuItems: [],
+    identified: true,
+    name: 'Karjalanpiirakka',
+    description: 'A savoury Karelian rice pastry.',
+    ingredients: ['rye flour'],
+    allergens: ['Likely contains gluten — typical for this dish'],
+    culturalContext: 'A traditional Finnish pastry from Karelia.',
+    disclaimer: 'This information is AI-generated and may be wrong.',
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('requests /api/analyze/menu-item with the item\'s name and menu text, and renders the result', async () => {
+    vi.mocked(fetch).mockImplementation((url) => {
+      if (String(url).endsWith('/api/analyze/menu-item')) {
+        return Promise.resolve(jsonResponse(menuItemResult))
+      }
+      return Promise.resolve(jsonResponse(menuResult))
+    })
+
+    const { user, button } = await uploadAndWaitForButton()
+    await user.click(button)
+    await screen.findByRole('heading', { name: /menu found/i })
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Karjalanpiirakka' }),
+    ).toBeInTheDocument()
+
+    const menuItemCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([url]) => String(url).endsWith('/api/analyze/menu-item'))
+    expect(menuItemCall).toBeDefined()
+    const [, requestInit] = menuItemCall!
+    expect(requestInit?.method).toBe('POST')
+    expect(JSON.parse(String(requestInit?.body))).toEqual({
+      name: 'Karjalanpiirakka',
+      menuText: 'Rye pastry, 4.50€',
+    })
+  })
+
+  it('shows the server-provided message for a non-2xx response while loading a menu item', async () => {
+    vi.mocked(fetch).mockImplementation((url) => {
+      if (String(url).endsWith('/api/analyze/menu-item')) {
+        return Promise.resolve(
+          jsonResponse({ error: 'Failed to analyze menu item' }, false, 500),
+        )
+      }
+      return Promise.resolve(jsonResponse(menuResult))
+    })
+
+    const { user, button } = await uploadAndWaitForButton()
+    await user.click(button)
+    await screen.findByRole('heading', { name: /menu found/i })
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/failed to analyze menu item/i)
+  })
+
+  it('shows the same friendly network-failure message for a menu item as for the main photo analysis', async () => {
+    // Regression test: loadMenuItem originally had no try/catch around its
+    // own fetch call, so a raw network rejection (offline, DNS failure, CORS
+    // block) reached MenuCarousel's generic error.message fallback verbatim
+    // as the browser's own technical text, unlike analyze()'s friendly
+    // message for the identical failure. loadMenuItem now catches it the
+    // same way analyze() does.
+    vi.mocked(fetch).mockImplementation((url) => {
+      if (String(url).endsWith('/api/analyze/menu-item')) {
+        return Promise.reject(new TypeError('Failed to fetch'))
+      }
+      return Promise.resolve(jsonResponse(menuResult))
+    })
+
+    const { user, button } = await uploadAndWaitForButton()
+    await user.click(button)
+    await screen.findByRole('heading', { name: /menu found/i })
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/could not reach the server/i)
+    expect(alert).not.toHaveTextContent(/failed to fetch/i)
   })
 })

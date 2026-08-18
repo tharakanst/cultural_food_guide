@@ -16,13 +16,21 @@ import express from 'express'
 import request from 'supertest'
 import analyzeRouter from './analyze'
 
-const { analyzeImageMock, findReferenceImageMock } = vi.hoisted(() => ({
+const { analyzeImageMock, analyzeMenuItemMock, findReferenceImageMock } = vi.hoisted(() => ({
   analyzeImageMock: vi.fn(),
+  analyzeMenuItemMock: vi.fn(),
   findReferenceImageMock: vi.fn(),
 }))
 
 vi.mock('../services/aiService', () => ({
   analyzeImage: analyzeImageMock,
+  // Bug found while adding menu-item coverage: this factory previously
+  // omitted analyzeMenuItem entirely, so any test that actually exercised
+  // POST /api/analyze/menu-item would have called `undefined(...)` inside
+  // the route's try/catch and always fallen through to a 500 — silently
+  // masking every other assertion about validation and response shaping for
+  // that route. See the "POST /api/analyze/menu-item" describe blocks below.
+  analyzeMenuItem: analyzeMenuItemMock,
 }))
 vi.mock('../services/imageService', () => ({
   findReferenceImage: findReferenceImageMock,
@@ -69,6 +77,7 @@ const UNIDENTIFIED_ANALYSIS = {
 describe('POST /api/analyze — request validation', () => {
   beforeEach(() => {
     analyzeImageMock.mockReset()
+    analyzeMenuItemMock.mockReset()
     findReferenceImageMock.mockReset()
   })
 
@@ -173,6 +182,7 @@ describe('POST /api/analyze — request validation', () => {
 describe('POST /api/analyze — success responses', () => {
   beforeEach(() => {
     analyzeImageMock.mockReset()
+    analyzeMenuItemMock.mockReset()
     findReferenceImageMock.mockReset()
   })
 
@@ -231,6 +241,7 @@ describe('POST /api/analyze — failure handling', () => {
 
   beforeEach(() => {
     analyzeImageMock.mockReset()
+    analyzeMenuItemMock.mockReset()
     findReferenceImageMock.mockReset()
     console.error = vi.fn()
   })
@@ -260,5 +271,365 @@ describe('POST /api/analyze — failure handling', () => {
 
     expect(res.status).toBe(500)
     expect(res.body).toEqual({ error: 'Failed to analyze image' })
+  })
+})
+
+/**
+ * POST /api/analyze/menu-item — mirrors the /api/analyze suites above at the
+ * same rigor. This route grew its own validator (validateMenuItemRequest)
+ * and its own success/failure handling in the same commit that added
+ * /api/analyze/menu-item to analyze.ts, but until now had no direct test
+ * coverage at all — see the comment on the aiService mock factory above for
+ * how that let a missing mock export go unnoticed.
+ */
+const VALID_MENU_ITEM_ANALYSIS = {
+  resultType: 'food',
+  menuItems: [],
+  identified: true,
+  name: 'Lohikeitto',
+  description: 'A creamy Finnish salmon soup.',
+  ingredients: ['salmon', 'potato', 'leek', 'cream'],
+  allergens: ['Contains milk (listed on the label)', 'Contains fish (listed on the label)'],
+  culturalContext: 'A traditional soup commonly served in Finnish lunch restaurants.',
+  disclaimer: 'AI-generated, may be wrong.',
+}
+
+const UNIDENTIFIED_MENU_ITEM_ANALYSIS = {
+  resultType: 'unidentified',
+  menuItems: [],
+  identified: false,
+  name: '',
+  description: 'The supplied menu text was too sparse to identify this item.',
+  ingredients: [],
+  allergens: [],
+  culturalContext: '',
+  disclaimer: 'AI-generated, may be wrong.',
+}
+
+/**
+ * A well-formed but structurally unexpected response for this route: nothing
+ * in the request forces the model to return resultType "menu", but
+ * parseAnalysis (shared with /api/analyze) allows it, so the route's
+ * reference-image-lookup branch needs to be proven correct against it too,
+ * not just assumed from the /api/analyze coverage above.
+ */
+const MENU_RESULT_TYPE_ANALYSIS = {
+  resultType: 'menu',
+  menuItems: [
+    { name: 'Karjalanpiirakka', menuText: 'Rye pastry, 4.50€' },
+    { name: 'Lohikeitto', menuText: 'Creamy salmon soup, 12.90€' },
+  ],
+  identified: true,
+  name: '',
+  description: '',
+  ingredients: [],
+  allergens: [],
+  culturalContext: '',
+  disclaimer: 'AI-generated, may be wrong.',
+}
+
+describe('POST /api/analyze/menu-item — request validation', () => {
+  beforeEach(() => {
+    analyzeImageMock.mockReset()
+    analyzeMenuItemMock.mockReset()
+    findReferenceImageMock.mockReset()
+  })
+
+  it('rejects a body whose top-level JSON value is an array, not an object', async () => {
+    const app = buildApp()
+    const res = await request(app).post('/api/analyze/menu-item').send([])
+
+    expect(res.status).toBe(400)
+    expect(res.body).toEqual({ error: expect.any(String) })
+    expect(analyzeMenuItemMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects a body missing the name field', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ menuText: 'Rye pastry, 4.50€' })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/name/i)
+    expect(analyzeMenuItemMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects a non-string name field', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: 12345, menuText: 'text' })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/name/i)
+    expect(analyzeMenuItemMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects an empty-string name', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: '', menuText: 'text' })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/name/i)
+    expect(analyzeMenuItemMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects a whitespace-only name', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: '   ', menuText: 'text' })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/name/i)
+    expect(analyzeMenuItemMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects a name over the 200-character cap', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: 'x'.repeat(201), menuText: 'text' })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/too long/i)
+    expect(analyzeMenuItemMock).not.toHaveBeenCalled()
+  })
+
+  it('accepts a name exactly at the 200-character cap', async () => {
+    analyzeMenuItemMock.mockResolvedValue(VALID_MENU_ITEM_ANALYSIS)
+    findReferenceImageMock.mockResolvedValue(undefined)
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: 'x'.repeat(200), menuText: 'text' })
+
+    expect(res.status).toBe(200)
+    expect(analyzeMenuItemMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects a missing menuText field', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: 'Lohikeitto' })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/menu text/i)
+    expect(analyzeMenuItemMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects a non-string menuText field', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: 'Lohikeitto', menuText: ['not', 'a', 'string'] })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/menu text/i)
+    expect(analyzeMenuItemMock).not.toHaveBeenCalled()
+  })
+
+  it('accepts an empty-string menuText (a dish with no printed description)', async () => {
+    analyzeMenuItemMock.mockResolvedValue(VALID_MENU_ITEM_ANALYSIS)
+    findReferenceImageMock.mockResolvedValue(undefined)
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: 'Lohikeitto', menuText: '' })
+
+    expect(res.status).toBe(200)
+    expect(analyzeMenuItemMock).toHaveBeenCalledWith('Lohikeitto', '')
+  })
+
+  it('rejects menuText over the 2000-character cap', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: 'Lohikeitto', menuText: 'x'.repeat(2001) })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/too long/i)
+    expect(analyzeMenuItemMock).not.toHaveBeenCalled()
+  })
+
+  it('accepts menuText exactly at the 2000-character cap', async () => {
+    analyzeMenuItemMock.mockResolvedValue(VALID_MENU_ITEM_ANALYSIS)
+    findReferenceImageMock.mockResolvedValue(undefined)
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: 'Lohikeitto', menuText: 'x'.repeat(2000) })
+
+    expect(res.status).toBe(200)
+    expect(analyzeMenuItemMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('trims surrounding whitespace from name and menuText before passing them on', async () => {
+    analyzeMenuItemMock.mockResolvedValue(VALID_MENU_ITEM_ANALYSIS)
+    findReferenceImageMock.mockResolvedValue(undefined)
+    const app = buildApp()
+    await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: '  Lohikeitto  ', menuText: '  Creamy salmon soup.  ' })
+
+    expect(analyzeMenuItemMock).toHaveBeenCalledWith('Lohikeitto', 'Creamy salmon soup.')
+  })
+
+  it('counts the *untrimmed* name length against the 200-character cap', async () => {
+    // Documents actual behaviour: validateMenuItemRequest checks name.length
+    // before trimming, so padding a name with whitespace can push it over
+    // the cap even though the trimmed content would fit comfortably.
+    const app = buildApp()
+    const paddedName = `  ${'x'.repeat(199)}  ` // 203 raw chars, 199 trimmed
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: paddedName, menuText: 'text' })
+
+    expect(res.status).toBe(400)
+    expect(analyzeMenuItemMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('POST /api/analyze/menu-item — success responses', () => {
+  beforeEach(() => {
+    analyzeImageMock.mockReset()
+    analyzeMenuItemMock.mockReset()
+    findReferenceImageMock.mockReset()
+  })
+
+  it('looks up a reference image and includes it when the item is identified food', async () => {
+    analyzeMenuItemMock.mockResolvedValue(VALID_MENU_ITEM_ANALYSIS)
+    findReferenceImageMock.mockResolvedValue(
+      'https://upload.wikimedia.org/wikipedia/commons/x.jpg',
+    )
+
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: 'Lohikeitto', menuText: 'Creamy salmon soup, 12.90€' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.referenceImageUrl).toBe(
+      'https://upload.wikimedia.org/wikipedia/commons/x.jpg',
+    )
+    expect(findReferenceImageMock).toHaveBeenCalledWith(VALID_MENU_ITEM_ANALYSIS.name)
+  })
+
+  it('never adds a referenceImageUrl key when the lookup finds nothing', async () => {
+    analyzeMenuItemMock.mockResolvedValue(VALID_MENU_ITEM_ANALYSIS)
+    findReferenceImageMock.mockResolvedValue(undefined)
+
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: 'Lohikeitto', menuText: 'text' })
+
+    expect(res.status).toBe(200)
+    expect(res.body).not.toHaveProperty('referenceImageUrl')
+  })
+
+  it('does not look up a reference image when the item could not be identified', async () => {
+    analyzeMenuItemMock.mockResolvedValue(UNIDENTIFIED_MENU_ITEM_ANALYSIS)
+
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: '??', menuText: '' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.identified).toBe(false)
+    expect(findReferenceImageMock).not.toHaveBeenCalled()
+    expect(res.body).not.toHaveProperty('referenceImageUrl')
+  })
+
+  it('does not look up a reference image for a resultType: "menu" response, even though identified is true', async () => {
+    // The lookup is gated on `resultType === 'food'` specifically (see
+    // analyze.ts), not merely on `identified` — this pins that the
+    // menu-item route reuses that same, correct gate rather than a looser
+    // one written for a route that is not expected to receive "menu".
+    analyzeMenuItemMock.mockResolvedValue(MENU_RESULT_TYPE_ANALYSIS)
+
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: 'Lohikeitto', menuText: 'text' })
+
+    expect(res.status).toBe(200)
+    expect(findReferenceImageMock).not.toHaveBeenCalled()
+    expect(res.body).not.toHaveProperty('referenceImageUrl')
+    expect(res.body.menuItems).toEqual(MENU_RESULT_TYPE_ANALYSIS.menuItems)
+  })
+
+  it('passes the trimmed name and menuText through to analyzeMenuItem untouched otherwise', async () => {
+    analyzeMenuItemMock.mockResolvedValue(VALID_MENU_ITEM_ANALYSIS)
+    findReferenceImageMock.mockResolvedValue(undefined)
+
+    const app = buildApp()
+    await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: 'Lohikeitto', menuText: 'Creamy salmon soup, 12.90€' })
+
+    expect(analyzeMenuItemMock).toHaveBeenCalledTimes(1)
+    expect(analyzeMenuItemMock).toHaveBeenCalledWith('Lohikeitto', 'Creamy salmon soup, 12.90€')
+  })
+})
+
+describe('POST /api/analyze/menu-item — failure handling', () => {
+  const originalConsoleError = console.error
+
+  beforeEach(() => {
+    analyzeImageMock.mockReset()
+    analyzeMenuItemMock.mockReset()
+    findReferenceImageMock.mockReset()
+    console.error = vi.fn()
+  })
+
+  afterEach(() => {
+    console.error = originalConsoleError
+  })
+
+  it('returns a generic 500 when the AI service throws, without leaking the internal message', async () => {
+    analyzeMenuItemMock.mockRejectedValue(
+      new Error('OpenAI request failed: quota exceeded, key sk-... leaked'),
+    )
+
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: 'Lohikeitto', menuText: 'text' })
+
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ error: 'Failed to analyze menu item' })
+    expect(res.text).not.toMatch(/sk-/)
+    expect(res.text).not.toMatch(/quota/)
+  })
+
+  it('returns a generic 500 when the reference-image lookup unexpectedly throws', async () => {
+    analyzeMenuItemMock.mockResolvedValue(VALID_MENU_ITEM_ANALYSIS)
+    findReferenceImageMock.mockRejectedValue(new Error('unexpected'))
+
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: 'Lohikeitto', menuText: 'text' })
+
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ error: 'Failed to analyze menu item' })
+  })
+
+  it('does not call analyzeImage for a menu-item request, and vice versa', async () => {
+    analyzeMenuItemMock.mockResolvedValue(VALID_MENU_ITEM_ANALYSIS)
+    findReferenceImageMock.mockResolvedValue(undefined)
+
+    const app = buildApp()
+    await request(app)
+      .post('/api/analyze/menu-item')
+      .send({ name: 'Lohikeitto', menuText: 'text' })
+
+    expect(analyzeImageMock).not.toHaveBeenCalled()
   })
 })

@@ -30,6 +30,17 @@ layer only communicates with the one below it.
 └──────────────────┘ └────────────────────┘
 ```
 
+The API layer exposes two endpoints, both handled in `routes/analyze.ts`, because
+the app handles two distinct inputs: a single dish or product, and a menu with
+several distinct dishes on it. `POST /api/analyze` takes a photo and returns
+either a single food/product result, or, when several orderable items are
+clearly readable, a `resultType: 'menu'` result that lists each item's name and
+printed menu text without analysing any of them yet. `POST /api/analyze/menu-item`
+then takes one such item and returns the same detailed result shape for it
+alone. The split exists so a ten-item menu photo does not trigger ten provider
+calls up front — the user picks an item and only that one is analysed, in a
+second request.
+
 ### Why this pattern
 
 Monolith, because the application has one meaningful operation and a team of
@@ -79,8 +90,8 @@ than a single server-rendered app. Two consequences:
    convention someone has to remember.
 2. **Any future client reuses the backend unchanged.** A React Native app, a
    native mobile app, or a different frontend would consume the same
-   `/api/analyze` endpoint. The PWA approach is a presentation decision, not an
-   architectural one.
+   `/api/analyze` and `/api/analyze/menu-item` endpoints. The PWA approach is a
+   presentation decision, not an architectural one.
 
 ## Quality attributes
 
@@ -91,7 +102,7 @@ than a single server-rendered app. Two consequences:
 | **Accessibility**   | WCAG AA contrast, alt text, keyboard operability, screen-reader announcements, text-to-speech. Enforced by a dedicated review agent |
 | **Maintainability** | Layer boundaries documented and enforced by per-directory instruction files that all AI tools read                                  |
 | **Reliability**     | Model output parsing tolerates malformed responses; camera failure falls back to file upload                                        |
-| **Cost**            | OpenAI billed per token (~$0.0006 per analysis). Rate limiting caps worst-case daily spend rather than protecting a quota           |
+| **Cost**            | OpenAI billed per token (~$0.0006 per analysis call). A menu photo adds one further call per item the user actually opens, not per item printed on the menu. Rate limiting caps worst-case daily spend rather than protecting a quota |
 
 Scalability is deliberately not optimised for. The system serves a demo and a
 small number of concurrent users; designing for load would be speculative.
@@ -169,6 +180,9 @@ remember to summon).
 - Accuracy of cultural claims is not verified against any source
 - Wikimedia reference images are matched by dish name and may occasionally be
   wrong or absent
+- Menu vs. single-dish classification (`resultType`) is decided entirely by the
+  model from the photo. There is no way for the user to correct a
+  misclassification — for example a single dish read as a menu, or vice versa
 - No offline capability beyond the PWA shell — analysis requires connectivity
 - iOS Safari PWA support is more restricted than Android; installed behaviour is
   untested on iOS
