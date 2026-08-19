@@ -11,6 +11,7 @@ import type { Request, Response } from 'express'
 import type { AnalyzeRequest, AnalyzeResponse, ApiError } from '../../../shared/types'
 import { analyzeImage } from '../services/aiService'
 import { findReferenceImage } from '../services/imageService'
+import { stripExifMetadata } from '../services/imageSanitizer'
 
 /**
  * Duplicated from the root AGENTS.md shared-constants table rather than
@@ -30,8 +31,7 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024 // 10 MB
 const DATA_URL_PATTERN = /^data:([a-z]+\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/]+={0,2})$/
 
 type ValidationResult =
-  | { ok: true; base64: string; mimeType: string }
-  | { ok: false; status: number; error: string }
+  { ok: true; base64: string; mimeType: string } | { ok: false; status: number; error: string }
 
 /** Decoded byte length of a base64 string, without allocating the buffer. */
 function decodedByteLength(base64: string): number {
@@ -95,7 +95,12 @@ router.post('/analyze', async (req: Request, res: Response<AnalyzeResponse | Api
   }
 
   try {
-    const analysis = await analyzeImage(validation.base64, validation.mimeType)
+    // The file-upload path does not re-encode through <canvas> the way the
+    // live-camera path does, so it can still carry the original EXIF block
+    // (GPS, device, timestamp). Strip it here before the image ever reaches
+    // the provider — see imageSanitizer.ts.
+    const sanitizedBase64 = stripExifMetadata(validation.base64, validation.mimeType)
+    const analysis = await analyzeImage(sanitizedBase64, validation.mimeType)
 
     // The reference photo must be a real photograph, never AI-generated, so it
     // is looked up separately and only when there is a dish to look up. A

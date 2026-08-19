@@ -74,14 +74,16 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
   const isFirstRender = useRef(true)
 
   /*
-   * Set when leaving 'live' because a photo was successfully captured, as
-   * opposed to the camera being turned off or becoming unavailable.
+   * Set when leaving 'live' because a photo was successfully captured or a
+   * file was successfully uploaded while the camera was live, as opposed to
+   * the camera being turned off or becoming unavailable.
    *
-   * All three transitions land on status 'idle', but they mean opposite things
-   * for focus: after turning the camera off, "Use camera" is the sensible place
-   * to be, while after a successful capture the user is finished with the
-   * camera and the next control is "Identify this food". Pulling focus back to
-   * "Use camera" there sends them backwards past the button they now want.
+   * All these transitions land on status 'idle', but they mean opposite
+   * things for focus: after turning the camera off, "Use camera" is the
+   * sensible place to be, while after a successful capture or upload the
+   * user is finished with the camera and the next control is "Identify this
+   * food" (focused by App.tsx, once it mounts). Pulling focus back to "Use
+   * camera" there sends them backwards past the button they now want.
    */
   const capturedRef = useRef(false)
 
@@ -147,10 +149,11 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
       takePhotoButtonRef.current?.focus()
       return
     }
-    // A successful capture also lands here, but the user has finished with the
-    // camera — "Identify this food" has just appeared and is what they want
-    // next. Leave focus where it is rather than dragging it backwards, and let
-    // the natural tab order carry them forward.
+    // A successful capture or upload also lands here, but the user has
+    // finished with the camera — "Identify this food" has just appeared in
+    // App.tsx and is what they want next. Skip refocusing "Use camera" and
+    // leave that forward hand-off to App.tsx, which owns a ref to that
+    // button (this component doesn't render it).
     if (capturedRef.current) {
       capturedRef.current = false
       return
@@ -226,6 +229,7 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
     // Tells the focus effect this transition to 'idle' was a success, not the
     // camera being switched off, so focus is not dragged back to "Use camera".
     capturedRef.current = true
+    setMessage(null)
     setStatus('idle')
     setPreview(dataUrl)
     onCapture(dataUrl)
@@ -265,6 +269,10 @@ export function CameraCapture({ onCapture, disabled = false }: CameraCaptureProp
         setMessage(null)
         // A file was chosen while the camera was running; it wins.
         stopCamera()
+        // Same reasoning as capturePhoto's success path: this is a settle
+        // that should hand focus forward (to "Identify this food" in
+        // App.tsx), not back to "Use camera".
+        capturedRef.current = true
         setStatus('idle')
         setPreview(result)
         onCapture(result)

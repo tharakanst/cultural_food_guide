@@ -68,6 +68,65 @@ describe('App — basic rendering', () => {
     render(<App />)
     expect(screen.queryByRole('button', { name: /identify this food/i })).not.toBeInTheDocument()
   })
+
+  it('moves focus to "Identify this food" once it appears after a successful upload', async () => {
+    // Finding A: CameraCapture unmounts a differently-shaped control on this
+    // transition and deliberately leaves focus to App, which owns the ref to
+    // this button.
+    const { button } = await uploadAndWaitForButton()
+    await waitFor(() => expect(document.activeElement).toBe(button))
+  })
+})
+
+describe('App — camera capture path (navigator.mediaDevices stubbed)', () => {
+  let getUserMediaMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    getUserMediaMock = vi.fn()
+    Object.defineProperty(window.navigator, 'mediaDevices', {
+      value: { getUserMedia: getUserMediaMock },
+      configurable: true,
+      writable: true,
+    })
+  })
+
+  afterEach(() => {
+    delete (window.navigator as unknown as { mediaDevices?: unknown }).mediaDevices
+  })
+
+  it('moves focus to "Identify this food" once it appears after a successful camera capture', async () => {
+    // jsdom has no real canvas implementation (the optional `canvas` package
+    // is not installed), so the 2D context and encoded output are stubbed
+    // directly on the prototype — see CameraCapture.test.tsx's equivalent
+    // test for the same reasoning.
+    const getContextSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D)
+    const toDataURLSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, 'toDataURL')
+      .mockReturnValue('data:image/jpeg;base64,xxx')
+
+    try {
+      const fakeStream = { getTracks: () => [] } as unknown as MediaStream
+      getUserMediaMock.mockResolvedValue(fakeStream)
+
+      const user = userEvent.setup()
+      render(<App />)
+      await user.click(screen.getByRole('button', { name: /use camera/i }))
+      const takePhotoButton = await screen.findByRole('button', { name: /^take photo$/i })
+
+      const video = document.querySelector('video') as HTMLVideoElement
+      Object.defineProperty(video, 'videoWidth', { value: 640, configurable: true })
+      Object.defineProperty(video, 'videoHeight', { value: 480, configurable: true })
+      await user.click(takePhotoButton)
+
+      const identifyButton = await screen.findByRole('button', { name: /identify this food/i })
+      await waitFor(() => expect(document.activeElement).toBe(identifyButton))
+    } finally {
+      getContextSpy.mockRestore()
+      toDataURLSpy.mockRestore()
+    }
+  })
 })
 
 describe('App — analyze flow', () => {

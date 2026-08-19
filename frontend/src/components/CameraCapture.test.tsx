@@ -219,6 +219,71 @@ describe('CameraCapture — camera permission and lifecycle (navigator.mediaDevi
     expect(await screen.findByRole('status')).toHaveTextContent(/camera is not ready yet/i)
     expect(onCapture).not.toHaveBeenCalled()
   })
+
+  it('does not yank focus onto "Use camera" when a file is uploaded while the camera is live', async () => {
+    // Regression test for the related, narrower issue under Finding A: an
+    // upload that arrives while the camera is 'live' also transitions to
+    // 'idle', which must not trigger the focus effect's normal "camera was
+    // turned off" branch and drag focus backwards onto "Use camera".
+    const fakeStream = { getTracks: () => [] } as unknown as MediaStream
+    getUserMediaMock.mockResolvedValue(fakeStream)
+
+    const user = userEvent.setup()
+    const onCapture = vi.fn()
+    render(<CameraCapture onCapture={onCapture} />)
+    await user.click(screen.getByRole('button', { name: /use camera/i }))
+    await screen.findByRole('button', { name: /^take photo$/i })
+
+    const input = screen.getByLabelText(/upload a photo/i) as HTMLInputElement
+    await userEvent.upload(input, makeFile('lunch.jpg', 'image/jpeg'))
+
+    await waitFor(() => expect(onCapture).toHaveBeenCalledTimes(1))
+    const useCameraButton = await screen.findByRole('button', { name: /use camera/i })
+    expect(document.activeElement).not.toBe(useCameraButton)
+  })
+
+  it('clears a stale status message once a later capture succeeds (Finding B)', async () => {
+    // jsdom has no real canvas implementation (the optional `canvas` package
+    // is not installed), so the 2D context and the encoded output are
+    // stubbed directly on the prototype — this exercises capturePhoto's own
+    // success path rather than a canvas library's behaviour.
+    const getContextSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D)
+    const toDataURLSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, 'toDataURL')
+      .mockReturnValue('data:image/jpeg;base64,xxx')
+
+    try {
+      const fakeStream = { getTracks: () => [] } as unknown as MediaStream
+      getUserMediaMock.mockResolvedValue(fakeStream)
+
+      const user = userEvent.setup()
+      const onCapture = vi.fn()
+      render(<CameraCapture onCapture={onCapture} />)
+      await user.click(screen.getByRole('button', { name: /use camera/i }))
+      const takePhotoButton = await screen.findByRole('button', { name: /^take photo$/i })
+
+      // First attempt fails and leaves a message behind — the same "not
+      // ready yet" case as the test above.
+      await user.click(takePhotoButton)
+      expect(await screen.findByRole('status')).toHaveTextContent(/camera is not ready yet/i)
+
+      // A real frame becomes available and the same button now succeeds.
+      const video = document.querySelector('video') as HTMLVideoElement
+      Object.defineProperty(video, 'videoWidth', { value: 640, configurable: true })
+      Object.defineProperty(video, 'videoHeight', { value: 480, configurable: true })
+      await user.click(takePhotoButton)
+
+      await waitFor(() => expect(onCapture).toHaveBeenCalledTimes(1))
+      // The status region is permanently mounted, so the assertion is that
+      // it says nothing now — not that it or the message is absent.
+      expect(screen.getByRole('status')).toBeEmptyDOMElement()
+    } finally {
+      getContextSpy.mockRestore()
+      toDataURLSpy.mockRestore()
+    }
+  })
 })
 
 describe('CameraCapture — oversized file', () => {

@@ -151,12 +151,6 @@ p {
   border-color: var(--color-error-accent);
 }
 
-.panel__heading {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-sm);
-}
-
 /* ---- Camera capture ---------------------------------------------------- */
 
 .camera__viewport {

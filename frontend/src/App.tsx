@@ -115,6 +115,7 @@ export function App() {
 
   const resultRef = useRef<HTMLDivElement | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const identifyButtonRef = useRef<HTMLButtonElement | null>(null)
 
   // Abandon any in-flight request when the app goes away.
   useEffect(() => () => abortRef.current?.abort(), [])
@@ -142,6 +143,16 @@ export function App() {
       ;(heading ?? resultRef.current)?.focus()
     }
   }, [state.status])
+
+  // Forward focus onto "Identify this food" after a successful capture or
+  // upload. `image` starts null and only ever becomes truthy (a fresh data
+  // URL) on a capture/upload, so this piggybacks on that rather than needing
+  // its own state, and naturally skips on first mount. CameraCapture
+  // deliberately leaves this transition's focus to us — it doesn't know
+  // about this sibling button.
+  useEffect(() => {
+    if (image) identifyButtonRef.current?.focus()
+  }, [image])
 
   const handleCapture = useCallback((dataUrl: string) => {
     setImage(dataUrl)
@@ -254,6 +265,7 @@ export function App() {
         {image ? (
           <div className="actions">
             <button
+              ref={identifyButtonRef}
               type="button"
               className="btn btn--primary"
               onClick={() => void analyze()}
